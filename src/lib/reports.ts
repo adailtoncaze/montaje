@@ -366,7 +366,7 @@ export async function gerarPdfRelatorio(
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
   const W = doc.internal.pageSize.getWidth(); // 841.89 (A4 paisagem)
   const M = 30;
-  const N_COLS = 8;
+  const RODAPE_Y = 566; // linha do rodapé: limite inferior útil da página
 
   // Larguras das colunas (soma igual a `tableWidth` para não sobrar 0.89pt).
   // Local de votação e LAT Origem ficam alinhados à esquerda.
@@ -506,32 +506,14 @@ export async function gerarPdfRelatorio(
       ? Math.ceil(170 + linhasMembros.length * 11.5 + 10)
       : 178;
 
-    const body: RowInput[] = [];
-    let munAtual = "";
+    // Linha da atividade -> células (Seq. contínua em todo o grupo)
     let seq = 0;
-    for (const a of g.atividades) {
-      const mun = a.local?.municipio ?? "";
-      if (mun !== munAtual) {
-        body.push([
-          {
-            content: `Município - ${mun === "" ? "Não definido" : mun}`,
-            colSpan: N_COLS,
-            styles: {
-              fillColor: COR_BANDA,
-              textColor: [51, 55, 120],
-              fontStyle: "bold",
-              halign: "left",
-            },
-          },
-        ]);
-        munAtual = mun;
-      }
-      seq++;
+    const montarLinha = (a: AtividadeCompleta): RowInput => {
       const hor = horarioAtividade(a);
       const horarioCell =
         [hor.intervalo, hor.tempo].filter(Boolean).join("\n") || "—";
-      body.push([
-        { content: String(seq), styles: { halign: "center" } },
+      return [
+        { content: String(++seq), styles: { halign: "center" } },
         montarCelulaLocal(a),
         {
           content: a.local ? String(a.local.qtd_secoes) : "—",
@@ -545,13 +527,49 @@ export async function gerarPdfRelatorio(
         { content: horarioCell, styles: { halign: "center" } },
         a.equipe?.nome ?? "—",
         a.equipe?.lat_origem ?? "",
-      ]);
+      ];
+    };
+
+    // Agrupa por município (a lista já vem ordenada por município)
+    const porMunicipio = new Map<string, AtividadeCompleta[]>();
+    for (const a of g.atividades) {
+      const mun = a.local?.municipio ?? "";
+      if (!porMunicipio.has(mun)) porMunicipio.set(mun, []);
+      porMunicipio.get(mun)!.push(a);
     }
 
-    autoTable(doc, {
+    // Uma mini-tabela por município, aberta pela faixa "Município - X" que
+    // fica ACIMA do cabeçalho das colunas (primeira linha do bloco).
+    const ALT_FAIXA = 16;
+    const ALT_MIN_BLOCO = ALT_FAIXA + 24.4 + 24.4 + 4; // faixa + cabeçalho + 1 linha
+    const paginasComCabecalho = new Set<number>();
+    let Y = startY;
+
+    for (const [mun, ativs] of porMunicipio) {
+      if (Y + ALT_MIN_BLOCO > RODAPE_Y) {
+        doc.addPage();
+        Y = startY;
+      }
+
+      // Faixa cinza com o nome do município (primeira linha do bloco)
+      doc.setFillColor(...COR_BANDA);
+      doc.rect(M, Y, SOMA_COLS, ALT_FAIXA, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 55, 120);
+      doc.text(
+        `Município - ${mun === "" ? "Não definido" : mun}`,
+        M + 3,
+        Y + ALT_FAIXA / 2 + 3
+      );
+      Y += ALT_FAIXA;
+
+      const rows = ativs.map(montarLinha);
+
+      autoTable(doc, {
       head,
-      body,
-      startY,
+      body: rows,
+      startY: Y,
       margin: { left: M, right: M, top: startY },
       theme: "grid",
       styles: {
@@ -572,6 +590,7 @@ export async function gerarPdfRelatorio(
       },
       tableWidth: SOMA_COLS,
       columnStyles: LARG_COLS,
+      rowPageBreak: "avoid", // linha inteira pula de página (evita nome duplicado)
       alternateRowStyles: { fillColor: COR_ALT },
       didParseCell: (data: CellHookData) => {
         // Célula do local com endereço: desenha manualmente (estilos diferentes
@@ -620,11 +639,21 @@ export async function gerarPdfRelatorio(
           data.doc.text(cel.endereco, cel.x + pad, topo + h1 + fsEnd * 0.85);
         }
       },
-      didDrawPage: () => {
-        desenharCabecalho(g, linhasMembros);
-        desenharRodape();
+      didDrawPage: (data) => {
+        // Cabeçalho e rodapé desenhados uma única vez por página
+        if (!paginasComCabecalho.has(data.pageNumber)) {
+          paginasComCabecalho.add(data.pageNumber);
+          desenharCabecalho(g, linhasMembros);
+          desenharRodape();
+        }
       },
     });
+
+    Y =
+      (doc as unknown as { lastAutoTable?: { finalY?: number } })
+        .lastAutoTable?.finalY ?? Y;
+    Y += 5; // folga entre blocos de município
+    }
   }
 
   // Numeração de páginas (após gerar todas)
