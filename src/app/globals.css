@@ -1,0 +1,196 @@
+@import "tailwindcss";
+
+/* ==========================================================================
+   MontaJE — Design tokens (base: Microsoft Teams / Fluent UI)
+   Fonte única de verdade. Tailwind lê estas variáveis via @theme inline.
+   O aplicativo é SOMENTE light mode (sem variante dark nem bloco escuro).
+   ========================================================================== */
+
+:root {
+  color-scheme: light;
+
+  /* Superfícies */
+  --canvas: #fafafa;          /* fundo da página */
+  --surface: #ffffff;         /* cards, header, tabelas */
+  --surface-subtle: #f5f5f5;  /* hover de linha, chips */
+  --surface-dropzone: #fafafa;
+
+  /* Bordas */
+  --stroke: #e0e0e0;          /* cards, divisórias */
+  --stroke-strong: #d1d1d1;   /* inputs, dropzone tracejada */
+  --stroke-subtle: #f0f0f0;   /* linhas internas de tabela */
+
+  /* Texto */
+  --fg: #242424;
+  --fg-2: #424242;
+  --fg-3: #616161;
+  --fg-4: #707070;            /* breadcrumb, legendas, cabeçalho de tabela */
+  --fg-disabled: #bdbdbd;
+  --fg-on-brand: #ffffff;
+
+  /* Marca (roxo Teams) */
+  --brand: #5b5fc7;
+  --brand-hover: #4f52b2;
+  --brand-pressed: #444791;
+  --brand-fg: #4f52b2;        /* texto/ícone de marca sobre fundo claro */
+  --brand-tint: #ebebfc;      /* fundo suave (badge info, item selecionado) */
+
+  /* Rail de navegação lateral */
+  --rail: #444791;
+  --rail-fg: #ffffff;
+  --rail-fg-muted: rgba(255, 255, 255, 0.78);
+  --rail-hover: rgba(255, 255, 255, 0.12);
+  --rail-active: rgba(255, 255, 255, 0.2);
+  --rail-indicator: #ffffff;
+  --rail-logo-bg: #5b5fc7;
+
+  /* Semânticas (badges, alertas) */
+  --success-bg: #dff6dd;
+  --success-fg: #0e700e;
+  --success-stroke: #9fd89f;
+  --warning-bg: #fff4ce;
+  --warning-fg: #835b00;
+  --warning-stroke: #f9e2ae;
+  --danger-bg: #fde7e9;
+  --danger-fg: #b10e1c;
+  --danger-stroke: #eeacb2;
+
+  /* Elevação (Fluent shadow2 / shadow4 / shadow16) */
+  --elevation-1: 0 0 2px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.14);
+  --elevation-2: 0 0 2px rgba(0, 0, 0, 0.12), 0 2px 4px rgba(0, 0, 0, 0.14);
+  --elevation-3: 0 0 8px rgba(0, 0, 0, 0.12), 0 32px 64px rgba(0, 0, 0, 0.14);
+
+  /* Foco (anel duplo Fluent) */
+  --focus-inner: #ffffff;
+  --focus-outer: #242424;
+
+  /* Layout */
+  --rail-width: 152px;
+  --bottom-bar-height: 60px;
+  --header-height: 60px;
+}
+
+@theme inline {
+  /* Cores → bg-canvas, text-fg-3, border-stroke, bg-brand ... */
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-surface-dropzone: var(--surface-dropzone);
+
+  --color-stroke: var(--stroke);
+  --color-stroke-strong: var(--stroke-strong);
+  --color-stroke-subtle: var(--stroke-subtle);
+
+  --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-fg-3: var(--fg-3);
+  --color-fg-4: var(--fg-4);
+  --color-fg-disabled: var(--fg-disabled);
+  --color-fg-on-brand: var(--fg-on-brand);
+
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-pressed: var(--brand-pressed);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-tint: var(--brand-tint);
+
+  --color-rail: var(--rail);
+  --color-rail-fg: var(--rail-fg);
+  --color-rail-fg-muted: var(--rail-fg-muted);
+  --color-rail-hover: var(--rail-hover);
+  --color-rail-active: var(--rail-active);
+  --color-rail-indicator: var(--rail-indicator);
+  --color-rail-logo: var(--rail-logo-bg);
+
+  --color-success-bg: var(--success-bg);
+  --color-success-fg: var(--success-fg);
+  --color-success-stroke: var(--success-stroke);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-fg: var(--warning-fg);
+  --color-warning-stroke: var(--warning-stroke);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-fg: var(--danger-fg);
+  --color-danger-stroke: var(--danger-stroke);
+
+  /* Tipografia — escala Fluent (12/14/16/20/24/28) */
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system,
+    "Helvetica Neue", Roboto, "Noto Sans", sans-serif;
+  --font-mono: "Cascadia Code", "Cascadia Mono", Consolas, "SFMono-Regular",
+    Menlo, monospace;
+
+  --text-micro: 0.6875rem;                 /* 11px: label do rail */
+  --text-micro--line-height: 0.875rem;
+  --text-caption: 0.75rem;                 /* 12px: legendas, badges, cabeçalho de tabela */
+  --text-caption--line-height: 1rem;
+  --text-body: 0.875rem;                   /* 14px: corpo padrão */
+  --text-body--line-height: 1.25rem;
+  --text-subtitle: 1rem;                   /* 16px: título de card */
+  --text-subtitle--line-height: 1.375rem;
+  --text-title: 1.25rem;                   /* 20px: título de página */
+  --text-title--line-height: 1.75rem;
+  --text-headline: 1.5rem;                 /* 24px */
+  --text-headline--line-height: 2rem;
+
+  /* Raios — Fluent: 4px controles, 8px cards */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  /* Sombras */
+  --shadow-card: var(--elevation-1);
+  --shadow-raised: var(--elevation-2);
+  --shadow-dialog: var(--elevation-3);
+
+  /* Largura do conteúdo principal */
+  --container-content: 50rem;
+
+  /* Movimento — curvas Fluent */
+  --ease-fluent: cubic-bezier(0.33, 0, 0.67, 1);
+  --ease-decel: cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    background: var(--canvas);
+    color: var(--fg);
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Foco visível: anel duplo (Fluent) */
+  :focus-visible {
+    outline: 2px solid var(--focus-outer);
+    outline-offset: 1px;
+    box-shadow: 0 0 0 1px var(--focus-inner);
+  }
+
+  ::selection {
+    background: var(--brand-tint);
+  }
+
+  /* Dialog modal: centralizado + backdrop escuro.
+     (Tailwind v4 zera o margin:auto padrão do <dialog>, o que
+     descola o modal para o canto superior esquerdo.) */
+  dialog {
+    margin: auto;
+    max-height: calc(100dvh - 2rem);
+  }
+  dialog::backdrop {
+    background: rgb(0 0 0 / 0.45);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
