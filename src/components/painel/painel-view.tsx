@@ -7,7 +7,7 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getLocalDateFromTimestamp, formatTimeBr } from "@/lib/utils/date";
-import { TIPO_ATIVIDADE_LABEL, TIPO_EQUIPE_LABEL } from "@/lib/constants";
+import { TIPO_ATIVIDADE_LABEL, TIPO_EQUIPE_LABEL, rotuloTipoEquipe, normalizarTipoEquipe } from "@/lib/constants";
 import { getStatusEfetivo } from "@/lib/utils/atividades";
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
 import type { Tables } from "@/types/supabase";
@@ -260,7 +260,7 @@ export function PainelView({
             <StatBox
               key={tipo}
               label={TIPO_EQUIPE_LABEL[tipo]}
-              value={equipes.filter((e) => e.tipo === tipo).length}
+              value={equipes.filter((e) => normalizarTipoEquipe(e.tipo) === tipo).length}
             />
           ))}
         </div>
@@ -357,8 +357,8 @@ function EquipeCard({ equipe }: { equipe: { nome: string; tipo: string; total: n
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-medium text-body truncate">{equipe.nome}</span>
-            <Badge tone={TIPO_TONE[equipe.tipo] ?? "neutral"} className="text-micro">
-              {TIPO_EQUIPE_LABEL[equipe.tipo as keyof typeof TIPO_EQUIPE_LABEL] ?? equipe.tipo}
+            <Badge tone={TIPO_TONE[normalizarTipoEquipe(equipe.tipo)] ?? "neutral"} className="text-micro">
+              {rotuloTipoEquipe(equipe.tipo)}
             </Badge>
           </div>
           <div className="mt-1 flex items-center gap-2 text-caption text-fg-3">

@@ -18,6 +18,22 @@ export const TIPO_EQUIPE_LABEL: Record<TipoEquipe, string> = {
   recolhimento_urna: "Recolhimento de Urna",
 };
 
+/** Valores legados do tipo de equipe (pré-migração 0003) → tipos atuais. */
+const TIPO_EQUIPE_LEGADO: Record<string, TipoEquipe> = {
+  montagem: "instalacao",
+  recolhimento: "recolhimento_midia",
+};
+
+/** Normaliza o tipo de equipe: aceita os 4 tipos atuais e valores legados. */
+export function normalizarTipoEquipe(tipo: string): TipoEquipe {
+  return TIPO_EQUIPE_LEGADO[tipo] ?? (tipo as TipoEquipe);
+}
+
+/** Rótulo do tipo de equipe (com fallback para o valor cru). */
+export function rotuloTipoEquipe(tipo: string): string {
+  return TIPO_EQUIPE_LABEL[normalizarTipoEquipe(tipo)] ?? tipo;
+}
+
 export const PAPEL_EQUIPE_LABEL: Record<PapelEquipe, string> = {
   responsavel: "Responsável",
   membro: "Membro",

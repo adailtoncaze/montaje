@@ -19,8 +19,7 @@ import { criarAtividade, atualizarAtividade, excluirAtividade, iniciarAtividade,
 import { useToast } from "@/components/ui/toast";
 import { useTransition } from "react";
 import { cn } from "@/lib/utils";
-import { TIPO_ATIVIDADE_LABEL, TIPO_EQUIPE_LABEL } from "@/lib/constants";
-import type { TipoEquipe } from "@/types/database";
+import { TIPO_ATIVIDADE_LABEL, rotuloTipoEquipe } from "@/lib/constants";
 import type { Tables } from "@/types/supabase";
 
 interface CronogramaViewProps {
@@ -189,7 +188,7 @@ export function CronogramaView({
     { value: "", label: "Selecione a equipe" },
     ...equipes.map((e) => ({
       value: e.id,
-      label: `${e.nome} (${TIPO_EQUIPE_LABEL[e.tipo as keyof typeof TIPO_EQUIPE_LABEL] ?? e.tipo})`,
+      label: `${e.nome} (${rotuloTipoEquipe(e.tipo)})`,
     })),
   ];
 
@@ -690,7 +689,7 @@ function CronogramaAtividadeRow({
             <div className="min-w-0">
               <p className="font-medium text-body truncate">{equipe.nome}</p>
               <p className="text-caption text-fg-3">
-                {TIPO_EQUIPE_LABEL[equipe.tipo as TipoEquipe] ?? equipe.tipo}
+                {rotuloTipoEquipe(equipe.tipo)}
               </p>
             </div>
           </div>

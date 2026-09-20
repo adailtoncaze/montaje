@@ -11,6 +11,8 @@ import type { Tables } from "@/types/supabase";
 import {
   TIPO_ATIVIDADE_LABEL,
   PAPEL_EQUIPE_LABEL,
+  rotuloTipoEquipe,
+  normalizarTipoEquipe,
 } from "@/lib/constants";
 import {
   ChevronRight,
@@ -222,8 +224,8 @@ export function EquipesClient({
       key: "tipo",
       header: "Tipo",
       render: (row) => (
-        <Badge tone={row.tipo === "instalacao" || row.tipo === "verificacao" ? "brand" : "success"}>
-          {TIPO_ATIVIDADE_LABEL[row.tipo as keyof typeof TIPO_ATIVIDADE_LABEL]}
+        <Badge tone={normalizarTipoEquipe(row.tipo) === "instalacao" || normalizarTipoEquipe(row.tipo) === "verificacao" ? "brand" : "success"}>
+          {rotuloTipoEquipe(row.tipo)}
         </Badge>
       ),
     },
@@ -395,12 +397,13 @@ export function EquipesClient({
             <div className="flex items-center gap-2">
               <Badge
                 tone={
-                  detalheEquipe.tipo === "instalacao" || detalheEquipe.tipo === "verificacao"
+                  normalizarTipoEquipe(detalheEquipe.tipo) === "instalacao" ||
+                  normalizarTipoEquipe(detalheEquipe.tipo) === "verificacao"
                     ? "brand"
                     : "success"
                 }
               >
-                {TIPO_ATIVIDADE_LABEL[detalheEquipe.tipo as keyof typeof TIPO_ATIVIDADE_LABEL]}
+                {rotuloTipoEquipe(detalheEquipe.tipo)}
               </Badge>
             </div>
 

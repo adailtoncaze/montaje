@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { TipoAtividade, StatusAtividade } from "@/types/database";
-import { TIPO_ATIVIDADE_LABEL, TIPO_EQUIPE_LABEL, STATUS_ATIVIDADE_LABEL } from "@/lib/constants";
+import { TIPO_ATIVIDADE_LABEL, STATUS_ATIVIDADE_LABEL, rotuloTipoEquipe } from "@/lib/constants";
 
 export interface FiltrosCronograma {
   busca: string;
@@ -70,7 +70,7 @@ export function FiltrosCronograma({
     { value: "todos", label: "Todas" },
     ...equipes.map((e) => ({
       value: e.id,
-      label: `${e.nome} (${TIPO_EQUIPE_LABEL[e.tipo as keyof typeof TIPO_EQUIPE_LABEL] ?? e.tipo})`,
+      label: `${e.nome} (${rotuloTipoEquipe(e.tipo)})`,
     })),
   ];
 
