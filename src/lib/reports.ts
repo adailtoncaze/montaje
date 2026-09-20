@@ -106,6 +106,13 @@ function horarioAtividade(a: AtividadeCompleta): {
   return { intervalo, tempo };
 }
 
+/** Nome do local de votação com o endereço completo na linha de baixo. */
+function montarCelulaLocal(a: AtividadeCompleta): string {
+  const nome = a.local?.nome ?? "—";
+  const endereco = a.local?.endereco ?? "";
+  return endereco ? `${nome}\n${endereco}` : nome;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Filtro e agrupamento                                               */
 /* ------------------------------------------------------------------ */
@@ -200,6 +207,7 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
   const headers = [
     "Seq.",
     "Local de votação",
+    "Endereço",
     "Município",
     "Qtd. seções",
     "Tipo de atividade",
@@ -219,6 +227,7 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
         [
           String(i + 1),
           a.local?.nome ?? "",
+          a.local?.endereco ?? "",
           a.local?.municipio ?? "",
           a.local ? String(a.local.qtd_secoes) : "",
           TIPO_ATIVIDADE_LABEL[a.tipo] ?? a.tipo,
@@ -340,10 +349,25 @@ export async function gerarPdfRelatorio(
   const autoTable = (await import("jspdf-autotable")).default;
 
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-  const W = 842;
+  const W = doc.internal.pageSize.getWidth(); // 841.89 (A4 paisagem)
   const M = 30;
   const N_COLS = 8;
-  const startY = 200; // abaixo do cabeçalho (grupo + membros)
+
+  // Larguras das colunas (soma igual a `tableWidth` para não sobrar 0.89pt)
+  const LARG_COLS: Record<number, { cellWidth: number }> = {
+    0: { cellWidth: 30 },
+    1: { cellWidth: 197 },
+    2: { cellWidth: 42 },
+    3: { cellWidth: 122 },
+    4: { cellWidth: 58 },
+    5: { cellWidth: 92 },
+    6: { cellWidth: 104 },
+    7: { cellWidth: 136 },
+  };
+  const SOMA_COLS = Object.values(LARG_COLS).reduce(
+    (soma, c) => soma + c.cellWidth,
+    0
+  );
 
   const logoPng = await rasterizarSvg(LOGO_SVG, 160, 168);
 
@@ -363,7 +387,10 @@ export async function gerarPdfRelatorio(
     ? `Cronograma de ${meta.tipoLabel}`
     : "Cronograma de Distribuição de Urnas";
 
-  const desenharCabecalho = (grupo: GrupoRelatorio | null) => {
+  const desenharCabecalho = (
+    grupo: GrupoRelatorio | null,
+    linhasMembros: Array<{ texto: string; bold: boolean }>
+  ) => {
     // Faixa da marca no topo
     doc.setFillColor(...COR_PRIMARIA);
     doc.rect(0, 0, W, 3, "F");
@@ -417,21 +444,18 @@ export async function gerarPdfRelatorio(
         doc.setTextColor(...COR_MUTED);
         doc.text(grupo.subtitulo, M, 144);
       }
-      if (grupo.membros?.length) {
-        const nomes = grupo.membros
-          .map((m) =>
-            m.papel === "responsavel" ? `${m.nome} (Responsável)` : m.nome
-          )
-          .join(", ");
-        let linhas = doc.splitTextToSize(`Membros: ${nomes}`, W - M - M);
-        if (linhas.length > 2) {
-          linhas = linhas.slice(0, 2);
-          linhas[1] = `${linhas[1]} …`;
-        }
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(9);
+      if (linhasMembros.length) {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9.5);
         doc.setTextColor(...COR_MUTED);
-        doc.text(linhas, M, 158);
+        doc.text("Membros:", M, 158);
+        let y = 170;
+        for (const l of linhasMembros) {
+          doc.setFont("helvetica", l.bold ? "bold" : "normal");
+          doc.setFontSize(9);
+          doc.text(l.texto, M + 12, y);
+          y += 11.5;
+        }
       }
     }
   };
@@ -450,6 +474,19 @@ export async function gerarPdfRelatorio(
     const g = grupos[gi];
     if (gi > 0) doc.addPage();
 
+    // Linhas de membros (responsável primeiro), uma por linha
+    const linhasMembros: Array<{ texto: string; bold: boolean }> = [];
+    for (const m of g.membros ?? []) {
+      const txt =
+        m.papel === "responsavel" ? `${m.nome} (Responsável)` : m.nome;
+      for (const parte of doc.splitTextToSize(`– ${txt}`, W - M - M - 12)) {
+        linhasMembros.push({ texto: parte, bold: m.papel === "responsavel" });
+      }
+    }
+    const startY = linhasMembros.length
+      ? Math.ceil(170 + linhasMembros.length * 11.5 + 10)
+      : 178;
+
     const body: RowInput[] = [];
     let munAtual = "";
     let seq = 0;
@@ -464,6 +501,7 @@ export async function gerarPdfRelatorio(
               fillColor: COR_BANDA,
               textColor: [51, 55, 120],
               fontStyle: "bold",
+              halign: "left",
             },
           },
         ]);
@@ -475,7 +513,7 @@ export async function gerarPdfRelatorio(
         [hor.intervalo, hor.tempo].filter(Boolean).join("\n") || "—";
       body.push([
         { content: String(seq), styles: { halign: "center" } },
-        a.local?.nome ?? "—",
+        montarCelulaLocal(a),
         {
           content: a.local ? String(a.local.qtd_secoes) : "—",
           styles: { halign: "center" },
@@ -503,6 +541,7 @@ export async function gerarPdfRelatorio(
         textColor: COR_TEXTO,
         lineColor: COR_LINHA,
         lineWidth: 0.4,
+        halign: "center",
       },
       headStyles: {
         fillColor: COR_PRIMARIA,
@@ -511,19 +550,11 @@ export async function gerarPdfRelatorio(
         fontSize: 8,
         halign: "center",
       },
-      columnStyles: {
-        0: { cellWidth: 30, halign: "center" },
-        1: { cellWidth: 197 },
-        2: { cellWidth: 42, halign: "center" },
-        3: { cellWidth: 122 },
-        4: { cellWidth: 58, halign: "center" },
-        5: { cellWidth: 92, halign: "center" },
-        6: { cellWidth: 104 },
-        7: { cellWidth: 136 },
-      },
+      tableWidth: SOMA_COLS,
+      columnStyles: LARG_COLS,
       alternateRowStyles: { fillColor: COR_ALT },
       didDrawPage: () => {
-        desenharCabecalho(g);
+        desenharCabecalho(g, linhasMembros);
         desenharRodape();
       },
     });
