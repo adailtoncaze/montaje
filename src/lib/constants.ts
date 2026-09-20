@@ -39,3 +39,7 @@ export const STATUS_ATIVIDADE_LABEL: Record<StatusAtividade, string> = {
 
 /** Janela (minutos) para destacar atividades com horário próximo (PRD 4.6). */
 export const ALERTA_PROXIMO_MINUTOS = 30;
+
+/** Nome oficial do sistema (cabeçalho do PDF e título da aba). */
+export const NOME_SISTEMA =
+  "Sistema de Gerenciamento de Cronograma de Montagem e Recolhimento";

@@ -1,9 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Providers } from "@/components/providers";
+import { NOME_SISTEMA } from "@/lib/constants";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "MontaJE", template: "%s · MontaJE" },
+  title: {
+    default: NOME_SISTEMA,
+    template: `%s · ${NOME_SISTEMA}`,
+  },
   description:
     "Cronograma de montagem e recolhimento eleitoral, com acompanhamento em tempo real.",
 };

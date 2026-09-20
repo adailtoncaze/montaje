@@ -13,6 +13,7 @@ import type { MembroResumido } from "@/lib/actions/equipes";
 import type { TipoAtividade } from "@/types/database";
 import type { CellHookData, RowInput } from "jspdf-autotable";
 import {
+  NOME_SISTEMA,
   STATUS_ATIVIDADE_LABEL,
   TIPO_ATIVIDADE_LABEL,
   TIPO_EQUIPE_LABEL,
@@ -117,6 +118,12 @@ function montarCelulaLocal(a: AtividadeCompleta): string {
 /*  Filtro e agrupamento                                               */
 /* ------------------------------------------------------------------ */
 
+/** Chave de ordenação por município ("Não definido" por último). */
+function chaveMunicipio(a: AtividadeCompleta): string {
+  const mun = a.local?.municipio ?? "";
+  return mun === "" ? "\uffff" : mun;
+}
+
 export function filtraAtividades(
   atividades: AtividadeCompleta[],
   f: FiltrosRelatorio
@@ -133,6 +140,10 @@ export function filtraAtividades(
       return true;
     })
     .sort((x, y) => {
+      // Município em primeiro lugar: as linhas de cada município ficam
+      // juntas e a linha com o nome do município abre cada bloco.
+      const m = chaveMunicipio(x).localeCompare(chaveMunicipio(y));
+      if (m !== 0) return m;
       const d = (x.data_hora_planejada ?? "").localeCompare(
         y.data_hora_planejada ?? ""
       );
@@ -421,7 +432,7 @@ export async function gerarPdfRelatorio(
     doc.setTextColor(...COR_MUTED);
     doc.text("Poder Judiciário", M + 52, 40);
     doc.text("Tribunal Regional Eleitoral da Paraíba", M + 52, 52);
-    doc.text("MontaJE - Sistema Integrado de Distribuição de Urnas", M + 52, 64);
+    doc.text(`MontaJE - ${NOME_SISTEMA}`, M + 52, 64);
 
     // Eleições (à direita)
     doc.setFont("helvetica", "bold");
@@ -487,7 +498,7 @@ export async function gerarPdfRelatorio(
     for (const m of g.membros ?? []) {
       const txt =
         m.papel === "responsavel" ? `${m.nome} (Responsável)` : m.nome;
-      for (const parte of doc.splitTextToSize(`– ${txt}`, W - M - M - 12)) {
+      for (const parte of doc.splitTextToSize(`• ${txt}`, W - M - M - 12)) {
         linhasMembros.push({ texto: parte, bold: m.papel === "responsavel" });
       }
     }
