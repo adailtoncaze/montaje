@@ -77,7 +77,7 @@ export function RelatoriosView({
     });
     return agruparPor === "equipe"
       ? agrupaPorEquipe(lista, membrosPorEquipe)
-      : agrupaPorDia(lista);
+      : agrupaPorDia(lista, membrosPorEquipe);
   }, [atividades, agruparPor, tipo, equipeId, municipio, dataInicio, dataFim, membrosPorEquipe]);
 
   const totalAtividades = useMemo(

@@ -19,8 +19,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   criarLocal,
   atualizarLocal,
@@ -52,9 +51,14 @@ function norm(value: string): string {
 /* ------------------------------------------------------------------ */
 
 export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
-  const router = useRouter();
   const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
+
+  // Cópia local da lista: atualiza sem recarregar a página (sem router.refresh)
+  const [listaLocais, setListaLocais] = useState<Local[]>(locais);
+
+  useEffect(() => {
+    setListaLocais(locais);
+  }, [locais]);
 
   // Estado de busca
   const [busca, setBusca] = useState("");
@@ -81,11 +85,7 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const refresh = useCallback(() => {
-    startTransition(() => router.refresh());
-  }, [router]);
-
-  const locaisFiltrados = locais.filter((l) => {
+  const locaisFiltrados = listaLocais.filter((l) => {
     if (!busca) return true;
     const b = busca.toLowerCase();
     return (
@@ -128,26 +128,31 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
 
     try {
       if (editando) {
-        await atualizarLocal(editando.id, {
+        const data = await atualizarLocal(editando.id, {
           nome: form.nome.trim(),
           municipio: form.municipio.trim(),
           qtd_secoes: qtd,
           endereco: form.endereco.trim() || null,
           lat_origem: form.lat_origem.trim() || null,
         });
+        // Atualiza na lista local: a edição aparece sem sair da tela
+        setListaLocais((prev) =>
+          prev.map((l) => (l.id === editando.id ? data : l))
+        );
         toast("success", "Local atualizado com sucesso.");
       } else {
-        await criarLocal({
+        const data = await criarLocal({
           nome: form.nome.trim(),
           municipio: form.municipio.trim(),
           qtd_secoes: qtd,
           endereco: form.endereco.trim() || null,
           lat_origem: form.lat_origem.trim() || null,
         });
+        // Adiciona na lista local: o novo local aparece sem sair da tela
+        setListaLocais((prev) => [...prev, data]);
         toast("success", "Local criado com sucesso.");
       }
       setFormOpen(false);
-      refresh();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erro ao salvar.";
       if (msg.includes("duplicate") || msg.includes("unique")) {
@@ -162,9 +167,10 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
     if (!excluindo) return;
     try {
       await excluirLocal(excluindo.id);
+      // Remove da lista local: some da tabela sem recarregar a página
+      setListaLocais((prev) => prev.filter((l) => l.id !== excluindo.id));
       toast("success", "Local excluído com sucesso.");
       setExcluindo(null);
-      refresh();
     } catch {
       toast("error", "Erro ao excluir local.");
     }
@@ -180,7 +186,7 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
 
   const validarLinhas = (rows: CsvRow[]): LinhaValidada[] => {
     const existentes = new Set(
-      locais.map((l) => `${norm(l.nome)}|${norm(l.municipio)}`),
+      listaLocais.map((l) => `${norm(l.nome)}|${norm(l.municipio)}`),
     );
     const vistos = new Set<string>();
 
@@ -227,7 +233,7 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
   const linhasValidadas = useCallback(
     () => validarLinhas(importRows),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [importRows, locais],
+    [importRows, listaLocais],
   );
 
   const handleFile = (file: File | undefined) => {
@@ -263,7 +269,7 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
 
     setImporting(true);
     try {
-      await importarLocais(
+      const criados = await importarLocais(
         validas.map((l) => {
           const nome = getColumn(l.row, ["nome", "nome do local", "local"]);
           const municipio = getColumn(l.row, ["municipio"]);
@@ -287,6 +293,8 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
           };
         }),
       );
+      // Adiciona os importados na lista local: aparecem sem recarregar a página
+      setListaLocais((prev) => [...prev, ...criados]);
       toast(
         "success",
         `Importação concluída: ${validas.length} criado(s), ${duplicados} ignorado(s), ${totalErros - duplicados} com erro.`,
@@ -294,7 +302,6 @@ export function LocaisClient({ locais, isAdmin }: LocaisClientProps) {
       setImportOpen(false);
       setImportRows([]);
       setImportFile(null);
-      refresh();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erro ao importar.";
       toast("error", `Erro na importação: ${msg}`);

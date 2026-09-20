@@ -19,8 +19,7 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   criarColaborador,
   atualizarColaborador,
@@ -49,9 +48,21 @@ export function ColaboradoresClient({
   funcoes,
   isAdmin,
 }: ColaboradoresClientProps) {
-  const router = useRouter();
   const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
+
+  // Cópia local da lista: atualiza sem recarregar a página (sem router.refresh)
+  const [listaColaboradores, setListaColaboradores] = useState<Colaborador[]>(
+    colaboradores,
+  );
+  const [listaFuncoes, setListaFuncoes] = useState<string[]>(funcoes);
+
+  useEffect(() => {
+    setListaColaboradores(colaboradores);
+  }, [colaboradores]);
+
+  useEffect(() => {
+    setListaFuncoes(funcoes);
+  }, [funcoes]);
 
   const [busca, setBusca] = useState("");
   const [filtroFuncao, setFiltroFuncao] = useState("");
@@ -74,11 +85,7 @@ export function ColaboradoresClient({
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const refresh = useCallback(() => {
-    startTransition(() => router.refresh());
-  }, [router]);
-
-  const colaboradoresFiltrados = colaboradores.filter((c) => {
+  const colaboradoresFiltrados = listaColaboradores.filter((c) => {
     const b = busca.toLowerCase();
     const matchBusca =
       !busca ||
@@ -115,23 +122,38 @@ export function ColaboradoresClient({
     }
 
     try {
+      // Garante que funções novas apareçam no filtro sem recarregar a página
+      const adicionarFuncoes = (fns: string[]) => {
+        setListaFuncoes((prev) => {
+          const novas = fns.filter((f) => !prev.includes(f));
+          return novas.length ? [...prev, ...novas] : prev;
+        });
+      };
+
       if (editando) {
-        await atualizarColaborador(editando.id, {
+        const data = await atualizarColaborador(editando.id, {
           nome: form.nome.trim(),
           funcao: form.funcao.trim(),
           telefone: form.telefone.trim() || null,
         });
+        adicionarFuncoes([data.funcao]);
+        // Atualiza na lista local: a edição aparece sem sair da tela
+        setListaColaboradores((prev) =>
+          prev.map((c) => (c.id === editando.id ? data : c))
+        );
         toast("success", "Colaborador atualizado com sucesso.");
       } else {
-        await criarColaborador({
+        const data = await criarColaborador({
           nome: form.nome.trim(),
           funcao: form.funcao.trim(),
           telefone: form.telefone.trim() || null,
         });
+        adicionarFuncoes([data.funcao]);
+        // Adiciona na lista local: o novo colaborador aparece sem sair da tela
+        setListaColaboradores((prev) => [...prev, data]);
         toast("success", "Colaborador criado com sucesso.");
       }
       setFormOpen(false);
-      refresh();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erro ao salvar.";
       setFormError(msg);
@@ -142,9 +164,12 @@ export function ColaboradoresClient({
     if (!excluindo) return;
     try {
       await excluirColaborador(excluindo.id);
+      // Remove da lista local: some da tabela sem recarregar a página
+      setListaColaboradores((prev) =>
+        prev.filter((c) => c.id !== excluindo.id)
+      );
       toast("success", "Colaborador excluído com sucesso.");
       setExcluindo(null);
-      refresh();
     } catch {
       toast("error", "Erro ao excluir colaborador.");
     }
@@ -160,7 +185,7 @@ export function ColaboradoresClient({
 
   const validarLinhas = (rows: CsvRow[]): LinhaValidada[] => {
     const existentes = new Set(
-      colaboradores.map((c) => `${norm(c.nome)}|${norm(c.funcao)}`),
+      listaColaboradores.map((c) => `${norm(c.nome)}|${norm(c.funcao)}`),
     );
     const vistos = new Set<string>();
 
@@ -190,7 +215,7 @@ export function ColaboradoresClient({
   const linhasValidadas = useCallback(
     () => validarLinhas(importRows),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [importRows, colaboradores],
+    [importRows, listaColaboradores],
   );
 
   const handleFile = (file: File | undefined) => {
@@ -225,7 +250,7 @@ export function ColaboradoresClient({
 
     setImporting(true);
     try {
-      await importarColaboradores(
+      const criados = await importarColaboradores(
         validas.map((l) => ({
           nome: getColumn(l.row, ["nome", "nome do colaborador", "colaborador"]),
           funcao: getColumn(l.row, ["funcao", "função", "cargo"]),
@@ -233,6 +258,14 @@ export function ColaboradoresClient({
             getColumn(l.row, ["telefone", "tel", "contato"]) || null,
         })),
       );
+      // Adiciona os importados na lista local: aparecem sem recarregar a página
+      setListaColaboradores((prev) => [...prev, ...criados]);
+      setListaFuncoes((prev) => {
+        const novas = criados
+          .map((c) => c.funcao)
+          .filter((f) => !prev.includes(f));
+        return novas.length ? [...prev, ...novas] : prev;
+      });
       toast(
         "success",
         `Importação concluída: ${validas.length} criado(s), ${duplicados} ignorado(s).`,
@@ -240,7 +273,6 @@ export function ColaboradoresClient({
       setImportOpen(false);
       setImportRows([]);
       setImportFile(null);
-      refresh();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erro ao importar.";
       toast("error", `Erro na importação: ${msg}`);
@@ -251,7 +283,7 @@ export function ColaboradoresClient({
 
   /* ---------------- Tabela ---------------- */
 
-  const funcoesOptions = funcoes.map((f) => ({ value: f, label: f }));
+  const funcoesOptions = listaFuncoes.map((f) => ({ value: f, label: f }));
 
   const colunas: Column<Colaborador>[] = [
     { key: "nome", header: "Nome" },

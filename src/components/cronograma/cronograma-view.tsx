@@ -21,6 +21,7 @@ import { useTransition } from "react";
 import { cn } from "@/lib/utils";
 import { TIPO_ATIVIDADE_LABEL, TIPO_EQUIPE_LABEL } from "@/lib/constants";
 import type { TipoEquipe } from "@/types/database";
+import type { Tables } from "@/types/supabase";
 
 interface CronogramaViewProps {
   atividades: AtividadeCompleta[];
@@ -183,9 +184,13 @@ export function CronogramaView({
     ...locais.map((l) => ({ value: l.id, label: `${l.nome} — ${l.municipio}` })),
   ];
 
+  // Rótulo com o tipo cadastrado da equipe (dinâmico — 4 tipos possíveis)
   const equipeOptions: SelectOption[] = [
     { value: "", label: "Selecione a equipe" },
-    ...equipes.map((e) => ({ value: e.id, label: `${e.nome} (${e.tipo === "montagem" ? "Montagem" : "Recolhimento"})` })),
+    ...equipes.map((e) => ({
+      value: e.id,
+      label: `${e.nome} (${TIPO_EQUIPE_LABEL[e.tipo as keyof typeof TIPO_EQUIPE_LABEL] ?? e.tipo})`,
+    })),
   ];
 
   // Form handlers
@@ -239,6 +244,21 @@ export function CronogramaView({
     setFormOpen(true);
   };
 
+  /** Monta a atividade completa a partir da linha retornada pelo servidor,
+   * preservando equipe/local já carregados ou buscando nas props locais. */
+  const montarAtividadeCompleta = (
+    row: Tables<"atividades">,
+    prev?: AtividadeCompleta
+  ): AtividadeCompleta => {
+    const equipe = (prev?.equipe ??
+      equipes.find((e) => e.id === row.equipe_id) ??
+      null) as Tables<"equipes"> | null;
+    const local = (prev?.local ??
+      locais.find((l) => l.id === row.local_id) ??
+      null) as Tables<"locais_votacao"> | null;
+    return { ...row, equipe, local };
+  };
+
   const salvarForm = async () => {
     if (!form.local_id || !form.equipe_id || !form.tipo || !form.data_hora_planejada) {
       setFormError("Preencha todos os campos obrigatórios.");
@@ -260,10 +280,22 @@ export function CronogramaView({
       };
 
       if (editando) {
-        await atualizarAtividade(editando.id, payload);
+        const { error, data } = await atualizarAtividade(editando.id, payload);
+        if (error) throw new Error(error);
+        if (data) {
+          // Atualização otimista: reflete a edição sem recarregar a página
+          setOptimisticAtividades((prev) =>
+            prev.map((a) => (a.id === editando.id ? montarAtividadeCompleta(data, a) : a))
+          );
+        }
         toast("success", "Atividade atualizada com sucesso.");
       } else {
-        await criarAtividade(payload);
+        const { error, data } = await criarAtividade(payload);
+        if (error) throw new Error(error);
+        if (data) {
+          // Inserção otimista: a nova atividade aparece sem sair da tela
+          setOptimisticAtividades((prev) => [...prev, montarAtividadeCompleta(data)]);
+        }
         toast("success", "Atividade criada com sucesso.");
       }
       setFormOpen(false);

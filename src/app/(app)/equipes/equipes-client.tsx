@@ -23,8 +23,7 @@ import {
   Star,
   Users,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   criarEquipe,
   atualizarEquipe,
@@ -49,9 +48,14 @@ export function EquipesClient({
   colaboradores,
   isAdmin,
 }: EquipesClientProps) {
-  const router = useRouter();
   const { toast } = useToast();
-  const [isPending, startTransition] = useTransition();
+
+  // Cópia local da lista: atualiza sem recarregar a página (sem router.refresh)
+  const [listaEquipes, setListaEquipes] = useState<Equipe[]>(equipes);
+
+  useEffect(() => {
+    setListaEquipes(equipes);
+  }, [equipes]);
 
   const [busca, setBusca] = useState("");
 
@@ -75,10 +79,6 @@ export function EquipesClient({
   const [addMembroOpen, setAddMembroOpen] = useState(false);
   const [colaboradorParaAdicionar, setColaboradorParaAdicionar] = useState("");
 
-  const refresh = useCallback(() => {
-    startTransition(() => router.refresh());
-  }, [router]);
-
   const carregarMembros = useCallback(async (equipeId: string) => {
     setMembrosLoading(true);
     try {
@@ -97,7 +97,7 @@ export function EquipesClient({
     }
   }, [detalheEquipe, carregarMembros]);
 
-  const equipesFiltradas = equipes.filter((e) => {
+  const equipesFiltradas = listaEquipes.filter((e) => {
     if (!busca) return true;
     return e.nome.toLowerCase().includes(busca.toLowerCase());
   });
@@ -130,22 +130,27 @@ export function EquipesClient({
 
     try {
       if (editando) {
-        await atualizarEquipe(editando.id, {
+        const data = await atualizarEquipe(editando.id, {
           nome: form.nome.trim(),
           tipo: form.tipo,
           lat_origem: form.lat_origem.trim() || null,
         });
+        // Atualiza na lista local: a edição aparece sem sair da tela
+        setListaEquipes((prev) =>
+          prev.map((e) => (e.id === editando.id ? data : e))
+        );
         toast("success", "Equipe atualizada com sucesso.");
       } else {
-        await criarEquipe({
+        const data = await criarEquipe({
           nome: form.nome.trim(),
           tipo: form.tipo,
           lat_origem: form.lat_origem.trim() || null,
         });
+        // Adiciona na lista local: a nova equipe aparece sem sair da tela
+        setListaEquipes((prev) => [...prev, data]);
         toast("success", "Equipe criada com sucesso.");
       }
       setFormOpen(false);
-      refresh();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Erro ao salvar.";
       setFormError(msg);
@@ -156,12 +161,13 @@ export function EquipesClient({
     if (!excluindo) return;
     try {
       await excluirEquipe(excluindo.id);
+      // Remove da lista local: some da tabela sem recarregar a página
+      setListaEquipes((prev) => prev.filter((e) => e.id !== excluindo.id));
       toast("success", "Equipe excluída com sucesso.");
       setExcluindo(null);
       if (detalheEquipe?.id === excluindo.id) {
         setDetalheEquipe(null);
       }
-      refresh();
     } catch {
       toast("error", "Erro ao excluir equipe.");
     }

@@ -38,11 +38,19 @@ export interface FiltrosRelatorio {
   dataFim: string;
 }
 
+export interface GrupoEquipeResumo {
+  nome: string;
+  tipo: string;
+  membros: MembroResumido[];
+}
+
 export interface GrupoRelatorio {
   id: string;
   titulo: string;
   subtitulo?: string;
   membros?: MembroResumido[];
+  /** Equipes que atuam no bloco (preenchido no agrupamento por dia). */
+  equipes?: GrupoEquipeResumo[];
   atividades: AtividadeCompleta[];
 }
 
@@ -88,7 +96,12 @@ function horarioAtividade(a: AtividadeCompleta): {
   intervalo: string;
   tempo: string;
 } {
-  const inicio = formatHora(a.data_hora_planejada);
+  // O "início" é o horário planejado digitado no formulário (inicio_planejado).
+  // data_hora_planejada guarda a data, mas a parte de hora é preenchida com a
+  // hora da criação da atividade ("hora atual") — não deve ser usada aqui.
+  const inicio = a.inicio_planejado
+    ? a.inicio_planejado.slice(0, 5)
+    : formatHora(a.data_hora_planejada);
   if (!inicio) return { intervalo: "", tempo: "" };
 
   let fim =
@@ -186,10 +199,28 @@ export function agrupaPorEquipe(
     }
     g.atividades.push(a);
   }
+  for (const g of map.values()) {
+    // Tipo dinâmico: rótulo do(s) tipo(s) de atividade realizados pela equipe
+    // (em vez do tipo fixo cadastrado) — mesmo comportamento do agrupamento por dia.
+    const tipos = new Set(g.atividades.map((a) => a.tipo));
+    const dinamico = rotuloTiposAtividades([...tipos]);
+    if (dinamico) g.subtitulo = dinamico;
+  }
   return [...map.values()].sort((x, y) => x.titulo.localeCompare(y.titulo));
 }
 
-export function agrupaPorDia(lista: AtividadeCompleta[]): GrupoRelatorio[] {
+/** Rótulo do(s) tipo(s) de atividade: um label ou vários separados por " / ". */
+function rotuloTiposAtividades(tipos: TipoAtividade[]): string {
+  const labels = Array.from(
+    new Set(tipos.map((t) => TIPO_ATIVIDADE_LABEL[t]).filter(Boolean))
+  );
+  return labels.join(" / ");
+}
+
+export function agrupaPorDia(
+  lista: AtividadeCompleta[],
+  membrosPorEquipe: Record<string, MembroResumido[]> = {}
+): GrupoRelatorio[] {
   const map = new Map<string, GrupoRelatorio>();
   for (const a of lista) {
     const dia = (a.data_hora_planejada ?? "").slice(0, 10);
@@ -200,6 +231,37 @@ export function agrupaPorDia(lista: AtividadeCompleta[]): GrupoRelatorio[] {
       map.set(dia, g);
     }
     g.atividades.push(a);
+
+    // Registra a equipe da atividade no bloco do dia (nome, tipo e membros —
+    // as mesmas informações do bloco agrupado por equipe).
+    if (a.equipe) {
+      const equipe = a.equipe;
+      if (!g.equipes) g.equipes = [];
+      if (!g.equipes.some((e) => e.nome === equipe.nome)) {
+        g.equipes.push({
+          nome: equipe.nome,
+          tipo:
+            TIPO_EQUIPE_LABEL[equipe.tipo as keyof typeof TIPO_EQUIPE_LABEL] ??
+            equipe.tipo,
+          membros: ordenarMembros(membrosPorEquipe[a.equipe_id] ?? []),
+        });
+      }
+    }
+  }
+  for (const g of map.values()) {
+    if (!g.equipes) continue;
+    g.equipes.sort((x, y) => x.nome.localeCompare(y.nome));
+    // Tipo dinâmico: rótulo do(s) tipo(s) de atividade que a equipe realizou
+    // no dia (em vez do tipo fixo cadastrado na equipe).
+    for (const e of g.equipes) {
+      const tipos = new Set(
+        g.atividades
+          .filter((a) => a.equipe?.nome === e.nome)
+          .map((a) => a.tipo)
+      );
+      const dinamico = rotuloTiposAtividades([...tipos]);
+      if (dinamico) e.tipo = dinamico;
+    }
   }
   return [...map.values()].sort((x, y) => x.id.localeCompare(y.id));
 }
@@ -304,6 +366,89 @@ const COR_ENDERECO: [number, number, number] = [130, 130, 142];
 /** Altura mínima da célula do local p/ caber nome + endereço (2 linhas). */
 const ALTO_LINHA_LOCAL = 2 * (8 * 1.15) + 2 * 3; // 24.4pt
 
+/** Linha do cabeçalho de um bloco agrupado por dia. */
+interface LinhaCabecalhoDia {
+  texto: string;
+  bold: boolean;
+  tamanho: number;
+  muted: boolean;
+  indent: number;
+  y: number;
+}
+
+/**
+ * Monta as linhas do cabeçalho quando o relatório é agrupado por dia: um
+ * sub-bloco por equipe com o MESMO estilo do bloco agrupado por equipe
+ * (nome "Equipe: X" bold 11, tipo 9.5 cinza, membros 9 com bolinha e
+ * responsável em negrito) — sem o título "Dia: ...".
+ */
+function montarLinhasCabecalhoDia(
+  doc: { splitTextToSize(texto: string, maxWidth: number): string[] },
+  equipes: GrupoEquipeResumo[],
+  larguraLinha: number
+): LinhaCabecalhoDia[] {
+  const linhas: LinhaCabecalhoDia[] = [];
+  let y = 130; // mesma posição do título do bloco por equipe
+  for (const e of equipes) {
+    // Nome da equipe: mesmo estilo/tamanho do título do bloco por equipe
+    linhas.push({
+      texto: `Equipe: ${e.nome}`,
+      bold: true,
+      tamanho: 11,
+      muted: false,
+      indent: 0,
+      y,
+    });
+    let ultimaY = y;
+
+    // Tipo da equipe: mesmo estilo do subtítulo (normal 9.5, cinza)
+    if (e.tipo) {
+      const ty = y + 14;
+      linhas.push({
+        texto: e.tipo,
+        bold: false,
+        tamanho: 9.5,
+        muted: true,
+        indent: 0,
+        y: ty,
+      });
+      ultimaY = ty;
+    }
+
+    // Membros: mesmo rótulo e posicionamento do bloco por equipe
+    if (e.membros.length) {
+      linhas.push({
+        texto: "Membros:",
+        bold: true,
+        tamanho: 9.5,
+        muted: true,
+        indent: 0,
+        y: y + 28,
+      });
+      let ym = y + 40;
+      for (const m of e.membros) {
+        const txt =
+          m.papel === "responsavel" ? `${m.nome} (Responsável)` : m.nome;
+        for (const parte of doc.splitTextToSize(`• ${txt}`, larguraLinha)) {
+          linhas.push({
+            texto: parte,
+            bold: m.papel === "responsavel",
+            tamanho: 9,
+            muted: false,
+            indent: 12,
+            y: ym,
+          });
+          ym += 11.5;
+          ultimaY = ym - 11.5; // baselina da última linha de membros
+        }
+      }
+    }
+
+    y = ultimaY + 18; // folga até a próxima equipe
+  }
+  return linhas;
+}
+
 /**
  * Rasteriza o SVG da logo em PNG (supersampling 4x para nitidez).
  * Retorna null fora do navegador ou se o canvas falhar (fallback: bloco "M").
@@ -402,18 +547,30 @@ export async function gerarPdfRelatorio(
   ]];
 
   const turno = meta.turno === 2 ? "2º Turno" : "1º Turno";
-  const titulo = meta.tipoLabel
+  const tituloGlobal = meta.tipoLabel
     ? `Cronograma de ${meta.tipoLabel}`
     : "Cronograma de Distribuição de Urnas";
 
+  /** Título de cada bloco: com filtro de tipo ativo usa o do filtro; no
+   * agrupamento por dia deriva do tipo das atividades do bloco (dinâmico). */
+  const tituloDoGrupo = (g: GrupoRelatorio): string => {
+    if (meta.tipoLabel) return tituloGlobal;
+    // Só deriva pelo tipo no agrupamento por dia (por equipe mantém o genérico).
+    if (!g.equipes || !g.equipes.length) return tituloGlobal;
+    const tipos = new Set(g.atividades.map((a) => a.tipo));
+    if (tipos.size === 1) {
+      const label = TIPO_ATIVIDADE_LABEL[[...tipos][0] as TipoAtividade];
+      if (label) return `Cronograma de ${label}`;
+    }
+    return tituloGlobal;
+  };
+
   const desenharCabecalho = (
     grupo: GrupoRelatorio | null,
-    linhasMembros: Array<{ texto: string; bold: boolean }>
+    linhasMembros: Array<{ texto: string; bold: boolean }>,
+    linhasDia?: LinhaCabecalhoDia[],
+    tituloBloco = tituloGlobal
   ) => {
-    // Faixa da marca no topo
-    doc.setFillColor(...COR_PRIMARIA);
-    doc.rect(0, 0, W, 3, "F");
-
     // Logo oficial (ou fallback com bloco "M")
     if (logoPng) {
       doc.addImage(logoPng, "PNG", M, 26, 40, 42);
@@ -440,10 +597,10 @@ export async function gerarPdfRelatorio(
     doc.setTextColor(...COR_TEXTO);
     doc.text(`Eleições: ${meta.ano} · ${turno}`, W - M, 42, { align: "right" });
 
-    // Título (dinâmico pelo tipo de atividade) e zona eleitoral
+    // Título (dinâmico pelo filtro de tipo ou pelo tipo do bloco) e zona eleitoral
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text(titulo, W / 2, 84, { align: "center" });
+    doc.text(tituloBloco, W / 2, 84, { align: "center" });
     if (meta.zonaEleitoral) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10.5);
@@ -453,6 +610,19 @@ export async function gerarPdfRelatorio(
 
     // Grupo (equipe ou dia) + tipo + membros
     if (grupo) {
+      // Agrupado por dia: um sub-bloco por equipe com o MESMO estilo do bloco
+      // agrupado por equipe (nome, tipo e membros) — sem o título "Dia: ...".
+      if (linhasDia && linhasDia.length) {
+        for (const l of linhasDia) {
+          doc.setFont("helvetica", l.bold ? "bold" : "normal");
+          doc.setFontSize(l.tamanho);
+          doc.setTextColor(...(l.muted ? COR_MUTED : COR_TEXTO));
+          doc.text(l.texto, M + l.indent, l.y);
+        }
+        return;
+      }
+
+      // Agrupado por equipe: título + subtítulo (tipo) + membros
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(...COR_TEXTO);
@@ -493,6 +663,15 @@ export async function gerarPdfRelatorio(
     const g = grupos[gi];
     if (gi > 0) doc.addPage();
 
+    // Título dinâmico por bloco (filtro ativo ou tipo das atividades do dia)
+    const tituloBloco = tituloDoGrupo(g);
+
+    // Agrupado por dia: linhas do cabeçalho com as equipes (nome, tipo e
+    // membros) — mesma informação do bloco agrupado por equipe.
+    const linhasDia = g.equipes?.length
+      ? montarLinhasCabecalhoDia(doc, g.equipes, W - M - M - 12)
+      : undefined;
+
     // Linhas de membros (responsável primeiro), uma por linha
     const linhasMembros: Array<{ texto: string; bold: boolean }> = [];
     for (const m of g.membros ?? []) {
@@ -502,9 +681,11 @@ export async function gerarPdfRelatorio(
         linhasMembros.push({ texto: parte, bold: m.papel === "responsavel" });
       }
     }
-    const startY = linhasMembros.length
-      ? Math.ceil(170 + linhasMembros.length * 11.5 + 10)
-      : 178;
+    const startY = linhasDia
+      ? Math.ceil((linhasDia[linhasDia.length - 1]?.y ?? 130) + 21.5)
+      : linhasMembros.length
+        ? Math.ceil(170 + linhasMembros.length * 11.5 + 10)
+        : 178;
 
     // Linha da atividade -> células (Seq. contínua em todo o grupo)
     let seq = 0;
@@ -643,7 +824,7 @@ export async function gerarPdfRelatorio(
         // Cabeçalho e rodapé desenhados uma única vez por página
         if (!paginasComCabecalho.has(data.pageNumber)) {
           paginasComCabecalho.add(data.pageNumber);
-          desenharCabecalho(g, linhasMembros);
+          desenharCabecalho(g, linhasMembros, linhasDia, tituloBloco);
           desenharRodape();
         }
       },
