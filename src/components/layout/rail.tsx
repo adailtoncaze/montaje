@@ -1,9 +1,9 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Vote } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Logo } from "@/components/ui/logo";
 import { NAV_FOOTER, NAV_ITEMS, type NavItem } from "./nav-items";
 
 function RailLink({ item, active }: { item: NavItem; active: boolean }) {
@@ -54,9 +54,9 @@ export function Rail({ isAdmin = true }: { isAdmin?: boolean }) {
     >
       <div
         aria-hidden
-        className="mb-3 hidden size-8 items-center justify-center rounded-lg bg-rail-logo text-rail-fg md:flex"
+        className="mb-3 hidden size-9 items-center justify-center rounded-lg bg-rail-logo text-rail-fg md:flex"
       >
-        <Vote className="size-[18px]" />
+        <Logo className="size-7" />
       </div>
 
       <div className="flex items-center gap-1 md:flex-col md:items-center">

@@ -126,11 +126,12 @@ export async function definirResponsavel(
   const supabase = await createClient();
 
   // Remove responsável anterior (se houver)
-  await supabase
+  const { error: erroRemover } = await supabase
     .from("equipe_colaboradores")
     .update({ papel: "membro" })
     .eq("equipe_id", equipeId)
     .eq("papel", "responsavel");
+  if (erroRemover) throw erroRemover;
 
   // Define novo responsável
   const { error } = await supabase

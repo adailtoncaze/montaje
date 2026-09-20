@@ -43,20 +43,10 @@ export function Dialog({
     [onClose],
   );
 
-  const handleBackdropClick = useCallback(
-    (e: React.MouseEvent<HTMLDialogElement>) => {
-      if (e.target === dialogRef.current) {
-        onClose();
-      }
-    },
-    [onClose],
-  );
-
   return (
     <dialog
       ref={dialogRef}
       onCancel={handleCancel}
-      onClick={handleBackdropClick}
       className={cn(
         "w-full overflow-y-auto rounded-lg border border-stroke bg-surface p-0 shadow-dialog",
         maxWidth,

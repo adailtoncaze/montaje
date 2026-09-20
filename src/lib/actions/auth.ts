@@ -18,11 +18,13 @@ export async function requireAuth() {
     redirect("/login");
   }
 
-  const { data: perfil } = await supabase
+  const { data: perfil, error: perfilError } = await supabase
     .from("perfis")
     .select("*")
     .eq("id", user.id)
     .single();
+  // PGRST116 = usuário sem registro em perfis (ainda deve ser criado).
+  if (perfilError && perfilError.code !== "PGRST116") throw perfilError;
 
   return { supabase, user, perfil };
 }
@@ -54,11 +56,13 @@ export const getPerfil = cache(async (): Promise<Tables<"perfis"> | null> => {
 
   if (!user) return null;
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("perfis")
     .select("*")
     .eq("id", user.id)
     .single();
+  // PGRST116 = usuário sem registro em perfis — retorna null (não-admin).
+  if (error && error.code !== "PGRST116") throw error;
 
   return data;
 });

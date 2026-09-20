@@ -2,13 +2,13 @@
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Logo } from "@/components/ui/logo";
 import { createClient } from "@/lib/supabase/client";
-import { Vote } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 const inputClass =
-  "h-8 w-full rounded-md border border-stroke-strong bg-surface px-3 text-body text-fg placeholder:text-fg-4 focus-visible:border-brand";
+  "h-8 w-full rounded-md border border-stroke-strong bg-surface px-3 text-body text-fg placeholder:text-fg-4 focus-visible:border-brand focus-visible:outline-none";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -38,8 +38,8 @@ export default function LoginPage() {
     <main className="flex min-h-dvh items-center justify-center p-4">
       <Card className="w-full max-w-sm p-6">
         <div className="mb-5 flex items-center gap-3">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-rail text-rail-fg">
-            <Vote className="size-[18px]" aria-hidden />
+          <div className="flex size-9 items-center justify-center rounded-lg bg-rail text-rail-fg">
+            <Logo className="size-7" />
           </div>
           <h1 className="text-title font-semibold">Entrar no MontaJE</h1>
         </div>

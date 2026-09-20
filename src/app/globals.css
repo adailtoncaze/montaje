@@ -170,6 +170,24 @@
     box-shadow: 0 0 0 1px var(--focus-inner);
   }
 
+  /* Cursor "mãozinha" em todo elemento clicável.
+     (O Tailwind v4 removeu o cursor:pointer padrão de botões/links.) */
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  a,
+  label,
+  select:not(:disabled),
+  summary,
+  input[type="checkbox"],
+  input[type="radio"] {
+    cursor: pointer;
+  }
+  button:disabled,
+  [role="button"]:disabled,
+  select:disabled {
+    cursor: not-allowed;
+  }
+
   ::selection {
     background: var(--brand-tint);
   }
