@@ -11,7 +11,7 @@
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
 import type { MembroResumido } from "@/lib/actions/equipes";
 import type { TipoAtividade } from "@/types/database";
-import type { RowInput } from "jspdf-autotable";
+import type { CellHookData, RowInput } from "jspdf-autotable";
 import {
   STATUS_ATIVIDADE_LABEL,
   TIPO_ATIVIDADE_LABEL,
@@ -288,6 +288,10 @@ const COR_LINHA: [number, number, number] = [205, 205, 220];
 const COR_TEXTO: [number, number, number] = [48, 48, 54];
 const COR_MUTED: [number, number, number] = [108, 108, 120];
 const COR_ALT: [number, number, number] = [246, 246, 251];
+/** Cinza claro do endereço (discreto, mais claro que o nome do local). */
+const COR_ENDERECO: [number, number, number] = [130, 130, 142];
+/** Altura mínima da célula do local p/ caber nome + endereço (2 linhas). */
+const ALTO_LINHA_LOCAL = 2 * (8 * 1.15) + 2 * 3; // 24.4pt
 
 /**
  * Rasteriza o SVG da logo em PNG (supersampling 4x para nitidez).
@@ -353,16 +357,20 @@ export async function gerarPdfRelatorio(
   const M = 30;
   const N_COLS = 8;
 
-  // Larguras das colunas (soma igual a `tableWidth` para não sobrar 0.89pt)
-  const LARG_COLS: Record<number, { cellWidth: number }> = {
+  // Larguras das colunas (soma igual a `tableWidth` para não sobrar 0.89pt).
+  // Local de votação e LAT Origem ficam alinhados à esquerda.
+  const LARG_COLS: Record<
+    number,
+    { cellWidth: number; halign?: "left" | "center" | "right" }
+  > = {
     0: { cellWidth: 30 },
-    1: { cellWidth: 197 },
+    1: { cellWidth: 197, halign: "left" },
     2: { cellWidth: 42 },
     3: { cellWidth: 122 },
     4: { cellWidth: 58 },
     5: { cellWidth: 92 },
     6: { cellWidth: 104 },
-    7: { cellWidth: 136 },
+    7: { cellWidth: 136, halign: "left" },
   };
   const SOMA_COLS = Object.values(LARG_COLS).reduce(
     (soma, c) => soma + c.cellWidth,
@@ -542,6 +550,7 @@ export async function gerarPdfRelatorio(
         lineColor: COR_LINHA,
         lineWidth: 0.4,
         halign: "center",
+        valign: "middle",
       },
       headStyles: {
         fillColor: COR_PRIMARIA,
@@ -553,6 +562,53 @@ export async function gerarPdfRelatorio(
       tableWidth: SOMA_COLS,
       columnStyles: LARG_COLS,
       alternateRowStyles: { fillColor: COR_ALT },
+      didParseCell: (data: CellHookData) => {
+        // Célula do local com endereço: desenha manualmente (estilos diferentes
+        // por linha) e reserva altura para as 2 linhas.
+        if (
+          data.column.index === 1 &&
+          typeof data.cell.raw === "string" &&
+          data.cell.raw.includes("\n")
+        ) {
+          const [nome, endereco] = data.cell.raw.split("\n");
+          const cel = data.cell as unknown as {
+            nome?: string;
+            endereco?: string;
+          };
+          cel.nome = nome;
+          cel.endereco = endereco;
+          data.cell.text = [""]; // suprime o desenho padrão (feito no didDrawCell)
+          data.cell.styles.minCellHeight = ALTO_LINHA_LOCAL;
+        }
+      },
+      didDrawCell: (data: CellHookData) => {
+        const cel = data.cell as unknown as {
+          nome?: string;
+          endereco?: string;
+          x: number;
+          y: number;
+          height: number;
+        };
+        if (data.column.index === 1 && cel.nome && cel.endereco) {
+          const pad = 3;
+          const fsNome = 8;
+          const fsEnd = 7;
+          const h1 = fsNome * 1.15;
+          const h2 = fsEnd * 1.15;
+          const bloco = h1 + h2;
+          // Bloco das 2 linhas centralizado na vertical (mesmo espaço topo/baixo)
+          const topo = cel.y + (cel.height - bloco) / 2;
+          // Nome do local (mesmo tom das demais células)
+          data.doc.setFont("helvetica", "normal");
+          data.doc.setFontSize(fsNome);
+          data.doc.setTextColor(...COR_TEXTO);
+          data.doc.text(cel.nome, cel.x + pad, topo + fsNome * 0.85);
+          // Endereço discreto: fonte menor e cinza mais claro
+          data.doc.setFontSize(fsEnd);
+          data.doc.setTextColor(...COR_ENDERECO);
+          data.doc.text(cel.endereco, cel.x + pad, topo + h1 + fsEnd * 0.85);
+        }
+      },
       didDrawPage: () => {
         desenharCabecalho(g, linhasMembros);
         desenharRodape();
