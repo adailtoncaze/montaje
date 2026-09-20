@@ -3,11 +3,11 @@
 import { useMemo } from "react";
 import { CheckCircle, AlertTriangle, Clock, Activity, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getLocalDateFromTimestamp, formatTimeBr } from "@/lib/utils/date";
-import { TIPO_ATIVIDADE_LABEL } from "@/lib/constants";
+import { TIPO_ATIVIDADE_LABEL, TIPO_EQUIPE_LABEL } from "@/lib/constants";
 import { getStatusEfetivo } from "@/lib/utils/atividades";
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
 import type { Tables } from "@/types/supabase";
@@ -15,6 +15,14 @@ import type { Tables } from "@/types/supabase";
 type Equipe = Tables<"equipes">;
 type Local = Tables<"locais_votacao">;
 type ConfigEleicao = Tables<"configuracao_eleicao">;
+
+/** Cor do badge por tipo de atividade/equipe (4 tipos atuais). */
+const TIPO_TONE: Record<string, BadgeTone> = {
+  instalacao: "brand",
+  verificacao: "success",
+  recolhimento_midia: "warning",
+  recolhimento_urna: "danger",
+};
 
 interface PainelViewProps {
   config: ConfigEleicao | null;
@@ -186,16 +194,10 @@ export function PainelView({
           <div className="px-5 pb-5 space-y-3">
             {porTipo.map((item) => {
               const pct = item.total > 0 ? Math.round((item.concluidas / item.total) * 100) : 0;
-              const tones: Record<string, "brand" | "success" | "warning" | "danger"> = {
-                instalacao: "brand",
-                verificacao: "success",
-                recolhimento_midia: "warning",
-                recolhimento_urna: "danger",
-              };
               return (
                 <div key={item.tipo} className="space-y-1">
                   <div className="flex items-center justify-between text-caption">
-                    <Badge tone={tones[item.tipo]} className="text-micro mr-2">
+                    <Badge tone={TIPO_TONE[item.tipo]} className="text-micro mr-2">
                       {TIPO_ATIVIDADE_LABEL[item.tipo as keyof typeof TIPO_ATIVIDADE_LABEL]}
                     </Badge>
                     <span className="text-fg-3">{item.concluidas} / {item.total}</span>
@@ -251,11 +253,16 @@ export function PainelView({
       {/* Estatísticas gerais */}
       <Card>
         <CardHeader title="Resumo geral" />
-        <div className="px-5 pb-5 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+        <div className="px-5 pb-5 grid grid-cols-2 md:grid-cols-3 gap-4 text-center">
           <StatBox label="Locais" value={locais.length} />
           <StatBox label="Equipes" value={equipes.length} />
-          <StatBox label="Instalação/Verificação" value={equipes.filter((e) => e.tipo === "instalacao" || e.tipo === "verificacao").length} />
-          <StatBox label="Recolhimento" value={equipes.filter((e) => e.tipo === "recolhimento_midia" || e.tipo === "recolhimento_urna").length} />
+          {(Object.keys(TIPO_EQUIPE_LABEL) as Array<keyof typeof TIPO_EQUIPE_LABEL>).map((tipo) => (
+            <StatBox
+              key={tipo}
+              label={TIPO_EQUIPE_LABEL[tipo]}
+              value={equipes.filter((e) => e.tipo === tipo).length}
+            />
+          ))}
         </div>
       </Card>
     </div>
@@ -316,13 +323,6 @@ function AtividadeCard({
   const statusEfetivo = getStatusEfetivo(atividade);
   const isAtrasado = statusEfetivo === "atrasado";
 
-  const tones: Record<string, "brand" | "success" | "warning" | "danger"> = {
-    instalacao: "brand",
-    verificacao: "success",
-    recolhimento_midia: "warning",
-    recolhimento_urna: "danger",
-  };
-
   const horario = formatTimeBr(data_hora_planejada);
 
   return (
@@ -330,7 +330,7 @@ function AtividadeCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge tone={tones[tipo]} className={cn("text-micro", compact && "text-micro")}>
+            <Badge tone={TIPO_TONE[tipo]} className={cn("text-micro", compact && "text-micro")}>
               {TIPO_ATIVIDADE_LABEL[tipo]}
             </Badge>
             <span className="text-caption text-fg-3 whitespace-nowrap">{horario}</span>
@@ -357,8 +357,8 @@ function EquipeCard({ equipe }: { equipe: { nome: string; tipo: string; total: n
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <span className="font-medium text-body truncate">{equipe.nome}</span>
-            <Badge tone={equipe.tipo === "montagem" ? "brand" : "success"} className="text-micro">
-              {equipe.tipo === "montagem" ? "Montagem" : "Recolhimento"}
+            <Badge tone={TIPO_TONE[equipe.tipo] ?? "neutral"} className="text-micro">
+              {TIPO_EQUIPE_LABEL[equipe.tipo as keyof typeof TIPO_EQUIPE_LABEL] ?? equipe.tipo}
             </Badge>
           </div>
           <div className="mt-1 flex items-center gap-2 text-caption text-fg-3">
