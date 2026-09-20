@@ -1,5 +1,6 @@
 "use server";
 
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import type {
   Tables,
@@ -141,3 +142,30 @@ export async function definirResponsavel(
     .eq("colaborador_id", colaboradorId);
   if (error) throw error;
 }
+
+export interface MembroResumido {
+  nome: string;
+  papel: "responsavel" | "membro";
+}
+
+/** Mapa equipe_id → membros (nome/papel), usado nos relatórios (1 consulta). */
+export const getMembrosPorEquipe = cache(
+  async (): Promise<Record<string, MembroResumido[]>> => {
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from("equipe_colaboradores")
+      .select("equipe_id, papel, colaboradores!inner(nome)");
+    if (error) throw error;
+
+    const mapa: Record<string, MembroResumido[]> = {};
+    for (const row of data ?? []) {
+      const nome = (row.colaboradores as unknown as { nome: string }).nome;
+      if (!nome) continue;
+      (mapa[row.equipe_id] ??= []).push({
+        nome,
+        papel: row.papel as "responsavel" | "membro",
+      });
+    }
+    return mapa;
+  }
+);

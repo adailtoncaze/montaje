@@ -1,0 +1,19 @@
+/**
+ * SVG oficial do MontaJE (mesmo desenho do favicon `src/app/icon.svg`):
+ * urna com cédula inserida e selo de concluído, em tile índigo — legível no
+ * cabeçalho branco dos relatórios PDF. É embutido via rasterização em canvas
+ * (o jspdf não renderiza SVG nativamente).
+ */
+export const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="136 176 292 264">
+  <rect x="171" y="404" width="26" height="16" rx="8" fill="#5b5fc7"/>
+  <rect x="315" y="404" width="26" height="16" rx="8" fill="#5b5fc7"/>
+  <rect x="156" y="300" width="200" height="110" rx="22" fill="#5b5fc7"/>
+  <rect x="191" y="288" width="130" height="22" rx="11" fill="#FFFFFF"/>
+  <g transform="rotate(-14 268 246)">
+    <rect x="233" y="196" width="70" height="96" rx="10" fill="#5b5fc7"/>
+    <line x1="248" y1="220" x2="288" y2="220" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+    <line x1="248" y1="238" x2="278" y2="238" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <circle cx="358" cy="404" r="50" fill="#5b5fc7" stroke="#FFFFFF" stroke-width="6"/>
+  <path d="M336 404 L352 420 L382 386" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>`;

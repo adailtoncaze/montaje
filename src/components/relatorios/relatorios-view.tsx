@@ -28,6 +28,7 @@ import {
   type TipoFiltro,
 } from "@/lib/reports";
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
+import type { MembroResumido } from "@/lib/actions/equipes";
 import type { Tables } from "@/types/supabase";
 import type { TipoAtividade } from "@/types/database";
 
@@ -36,6 +37,7 @@ interface RelatoriosViewProps {
   atividades: AtividadeCompleta[];
   equipes: Tables<"equipes">[];
   locais: Tables<"locais_votacao">[];
+  membrosPorEquipe: Record<string, MembroResumido[]>;
 }
 
 export function RelatoriosView({
@@ -43,6 +45,7 @@ export function RelatoriosView({
   atividades,
   equipes,
   locais,
+  membrosPorEquipe,
 }: RelatoriosViewProps) {
   const { toast } = useToast();
 
@@ -72,8 +75,10 @@ export function RelatoriosView({
       dataInicio,
       dataFim,
     });
-    return agruparPor === "equipe" ? agrupaPorEquipe(lista) : agrupaPorDia(lista);
-  }, [atividades, agruparPor, tipo, equipeId, municipio, dataInicio, dataFim]);
+    return agruparPor === "equipe"
+      ? agrupaPorEquipe(lista, membrosPorEquipe)
+      : agrupaPorDia(lista);
+  }, [atividades, agruparPor, tipo, equipeId, municipio, dataInicio, dataFim, membrosPorEquipe]);
 
   const totalAtividades = useMemo(
     () => resultados.reduce((soma, g) => soma + g.atividades.length, 0),
@@ -84,6 +89,7 @@ export function RelatoriosView({
     ano: config?.ano ?? 0,
     turno: config?.turno ?? 1,
     zonaEleitoral: config?.zona_eleitoral ?? "",
+    tipoLabel: tipo === "todas" ? "" : TIPO_ATIVIDADE_LABEL[tipo],
   };
 
   const aoGerarPdf = async () => {

@@ -9,6 +9,7 @@
  */
 
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
+import type { MembroResumido } from "@/lib/actions/equipes";
 import type { TipoAtividade } from "@/types/database";
 import type { RowInput } from "jspdf-autotable";
 import {
@@ -16,6 +17,7 @@ import {
   TIPO_ATIVIDADE_LABEL,
   TIPO_EQUIPE_LABEL,
 } from "@/lib/constants";
+import { LOGO_SVG } from "@/lib/logo-svg";
 
 /* ------------------------------------------------------------------ */
 /*  Tipos públicos                                                     */
@@ -39,6 +41,7 @@ export interface GrupoRelatorio {
   id: string;
   titulo: string;
   subtitulo?: string;
+  membros?: MembroResumido[];
   atividades: AtividadeCompleta[];
 }
 
@@ -46,6 +49,8 @@ export interface MetaRelatorio {
   ano: number;
   turno: number;
   zonaEleitoral: string;
+  /** Rótulo do tipo de atividade filtrado ("" quando "Todas"). */
+  tipoLabel: string;
 }
 
 /* ------------------------------------------------------------------ */
@@ -61,16 +66,44 @@ export function formatHora(iso: string): string {
   return iso.length >= 16 ? iso.slice(11, 16) : "";
 }
 
-export function formatSeq(n: number | null | undefined): string {
-  return n == null ? "—" : String(n).padStart(3, "0");
-}
-
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
 export function formataTimestamp(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function formatarDuracao(min: number): string {
+  if (!Number.isFinite(min)) return "";
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
+/** Intervalo início–fim e tempo total da atividade (p/ coluna Horário). */
+function horarioAtividade(a: AtividadeCompleta): {
+  intervalo: string;
+  tempo: string;
+} {
+  const inicio = formatHora(a.data_hora_planejada);
+  if (!inicio) return { intervalo: "", tempo: "" };
+
+  let fim =
+    a.fim_planejado && a.fim_planejado.length >= 5
+      ? a.fim_planejado.slice(0, 5)
+      : "";
+  if (!fim && a.duracao_minutos != null) {
+    const [h, m] = inicio.split(":").map(Number);
+    const total = h * 60 + m + a.duracao_minutos;
+    fim = `${pad2(Math.floor(total / 60) % 24)}:${pad2(total % 60)}`;
+  }
+
+  const intervalo = fim ? `${inicio} – ${fim}` : inicio;
+  const tempo =
+    a.duracao_minutos != null ? formatarDuracao(a.duracao_minutos) : "";
+  return { intervalo, tempo };
 }
 
 /* ------------------------------------------------------------------ */
@@ -101,8 +134,21 @@ export function filtraAtividades(
     });
 }
 
+function ordenarMembros(membros: MembroResumido[]): MembroResumido[] {
+  return membros
+    .slice()
+    .sort((x, y) =>
+      x.papel === y.papel
+        ? x.nome.localeCompare(y.nome)
+        : x.papel === "responsavel"
+          ? -1
+          : 1
+    );
+}
+
 export function agrupaPorEquipe(
-  lista: AtividadeCompleta[]
+  lista: AtividadeCompleta[],
+  membrosPorEquipe: Record<string, MembroResumido[]> = {}
 ): GrupoRelatorio[] {
   const map = new Map<string, GrupoRelatorio>();
   for (const a of lista) {
@@ -115,6 +161,7 @@ export function agrupaPorEquipe(
         subtitulo:
           TIPO_EQUIPE_LABEL[a.equipe.tipo as keyof typeof TIPO_EQUIPE_LABEL] ??
           a.equipe.tipo,
+        membros: ordenarMembros(membrosPorEquipe[a.equipe_id] ?? []),
         atividades: [],
       };
       map.set(a.equipe_id, g);
@@ -157,7 +204,8 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
     "Qtd. seções",
     "Tipo de atividade",
     "Data",
-    "Hora",
+    "Horário (início – fim)",
+    "Tempo",
     "Equipe",
     "LAT Origem",
     "Status",
@@ -165,16 +213,18 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
   ];
   const linhas: string[] = [headers.map(csvEscape).join(";")];
   for (const g of grupos) {
-    for (const a of g.atividades) {
+    g.atividades.forEach((a, i) => {
+      const hor = horarioAtividade(a);
       linhas.push(
         [
-          formatSeq(a.sequencia),
+          String(i + 1),
           a.local?.nome ?? "",
           a.local?.municipio ?? "",
           a.local ? String(a.local.qtd_secoes) : "",
           TIPO_ATIVIDADE_LABEL[a.tipo] ?? a.tipo,
           formatDataBr(a.data_hora_planejada),
-          formatHora(a.data_hora_planejada),
+          hor.intervalo,
+          hor.tempo,
           a.equipe?.nome ?? "",
           a.equipe?.lat_origem ?? "",
           STATUS_ATIVIDADE_LABEL[a.status] ?? a.status,
@@ -183,7 +233,7 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
           .map(csvEscape)
           .join(";")
       );
-    }
+    });
   }
   return linhas.join("\r\n");
 }
@@ -230,7 +280,56 @@ const COR_TEXTO: [number, number, number] = [48, 48, 54];
 const COR_MUTED: [number, number, number] = [108, 108, 120];
 const COR_ALT: [number, number, number] = [246, 246, 251];
 
-const LARG_COLS = [34, 218, 46, 132, 62, 46, 110, 134]; // soma = 782 (842-2*30)
+/**
+ * Rasteriza o SVG da logo em PNG (supersampling 4x para nitidez).
+ * Retorna null fora do navegador ou se o canvas falhar (fallback: bloco "M").
+ */
+async function rasterizarSvg(
+  svg: string,
+  largura: number,
+  altura: number
+): Promise<string | null> {
+  if (typeof document === "undefined" || typeof Image === "undefined")
+    return null;
+  try {
+    return await new Promise<string | null>((resolve) => {
+      let url = "";
+      try {
+        url = URL.createObjectURL(new Blob([svg], { type: "image/svg+xml" }));
+      } catch {
+        resolve(null);
+        return;
+      }
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement("canvas");
+          canvas.width = largura;
+          canvas.height = altura;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            URL.revokeObjectURL(url);
+            resolve(null);
+            return;
+          }
+          ctx.drawImage(img, 0, 0, largura, altura);
+          URL.revokeObjectURL(url);
+          resolve(canvas.toDataURL("image/png"));
+        } catch {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(null);
+      };
+      img.src = url;
+    });
+  } catch {
+    return null;
+  }
+}
 
 export async function gerarPdfRelatorio(
   grupos: GrupoRelatorio[],
@@ -244,6 +343,9 @@ export async function gerarPdfRelatorio(
   const W = 842;
   const M = 30;
   const N_COLS = 8;
+  const startY = 200; // abaixo do cabeçalho (grupo + membros)
+
+  const logoPng = await rasterizarSvg(LOGO_SVG, 160, 168);
 
   const head = [[
     "Seq.",
@@ -251,25 +353,32 @@ export async function gerarPdfRelatorio(
     "Qtd.\nseções",
     "Tipo de atividade",
     "Data",
-    "Hora",
+    "Horário\n(início – fim)",
     "Equipe(s)",
     "LAT Origem",
   ]];
 
   const turno = meta.turno === 2 ? "2º Turno" : "1º Turno";
+  const titulo = meta.tipoLabel
+    ? `Cronograma de ${meta.tipoLabel}`
+    : "Cronograma de Distribuição de Urnas";
 
   const desenharCabecalho = (grupo: GrupoRelatorio | null) => {
     // Faixa da marca no topo
     doc.setFillColor(...COR_PRIMARIA);
     doc.rect(0, 0, W, 3, "F");
 
-    // Bloco da marca (M em bg primária)
-    doc.setFillColor(...COR_PRIMARIA);
-    doc.roundedRect(M, 26, 40, 42, 7, 7, "F");
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(21);
-    doc.setTextColor(255, 255, 255);
-    doc.text("M", M + 20, 56, { align: "center" });
+    // Logo oficial (ou fallback com bloco "M")
+    if (logoPng) {
+      doc.addImage(logoPng, "PNG", M, 26, 40, 42);
+    } else {
+      doc.setFillColor(...COR_PRIMARIA);
+      doc.roundedRect(M, 26, 40, 42, 7, 7, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(21);
+      doc.setTextColor(255, 255, 255);
+      doc.text("M", M + 20, 56, { align: "center" });
+    }
 
     // Órgãos
     doc.setFont("helvetica", "normal");
@@ -285,22 +394,18 @@ export async function gerarPdfRelatorio(
     doc.setTextColor(...COR_TEXTO);
     doc.text(`Eleições: ${meta.ano} · ${turno}`, W - M, 42, { align: "right" });
 
-    // Título
+    // Título (dinâmico pelo tipo de atividade) e zona eleitoral
     doc.setFont("helvetica", "bold");
     doc.setFontSize(14);
-    doc.text("Cronograma de Distribuição de Urnas", W / 2, 84, {
-      align: "center",
-    });
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(10.5);
-    doc.setTextColor(...COR_MUTED);
+    doc.text(titulo, W / 2, 84, { align: "center" });
     if (meta.zonaEleitoral) {
-      doc.text(`Zona Eleitoral: ${meta.zonaEleitoral}`, W / 2, 100, {
-        align: "center",
-      });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(10.5);
+      doc.setTextColor(...COR_MUTED);
+      doc.text(meta.zonaEleitoral, W / 2, 100, { align: "center" });
     }
 
-    // Grupo (equipe ou dia)
+    // Grupo (equipe ou dia) + tipo + membros
     if (grupo) {
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
@@ -311,6 +416,22 @@ export async function gerarPdfRelatorio(
         doc.setFontSize(9.5);
         doc.setTextColor(...COR_MUTED);
         doc.text(grupo.subtitulo, M, 144);
+      }
+      if (grupo.membros?.length) {
+        const nomes = grupo.membros
+          .map((m) =>
+            m.papel === "responsavel" ? `${m.nome} (Responsável)` : m.nome
+          )
+          .join(", ");
+        let linhas = doc.splitTextToSize(`Membros: ${nomes}`, W - M - M);
+        if (linhas.length > 2) {
+          linhas = linhas.slice(0, 2);
+          linhas[1] = `${linhas[1]} …`;
+        }
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(...COR_MUTED);
+        doc.text(linhas, M, 158);
       }
     }
   };
@@ -331,6 +452,7 @@ export async function gerarPdfRelatorio(
 
     const body: RowInput[] = [];
     let munAtual = "";
+    let seq = 0;
     for (const a of g.atividades) {
       const mun = a.local?.municipio ?? "";
       if (mun !== munAtual) {
@@ -347,16 +469,23 @@ export async function gerarPdfRelatorio(
         ]);
         munAtual = mun;
       }
+      seq++;
+      const hor = horarioAtividade(a);
+      const horarioCell =
+        [hor.intervalo, hor.tempo].filter(Boolean).join("\n") || "—";
       body.push([
-        { content: formatSeq(a.sequencia), styles: { halign: "center" } },
+        { content: String(seq), styles: { halign: "center" } },
         a.local?.nome ?? "—",
         {
           content: a.local ? String(a.local.qtd_secoes) : "—",
           styles: { halign: "center" },
         },
         TIPO_ATIVIDADE_LABEL[a.tipo] ?? a.tipo,
-        { content: formatDataBr(a.data_hora_planejada), styles: { halign: "center" } },
-        { content: formatHora(a.data_hora_planejada), styles: { halign: "center" } },
+        {
+          content: formatDataBr(a.data_hora_planejada),
+          styles: { halign: "center" },
+        },
+        { content: horarioCell, styles: { halign: "center" } },
         a.equipe?.nome ?? "—",
         a.equipe?.lat_origem ?? "",
       ]);
@@ -365,8 +494,8 @@ export async function gerarPdfRelatorio(
     autoTable(doc, {
       head,
       body,
-      startY: 160,
-      margin: { left: M, right: M },
+      startY,
+      margin: { left: M, right: M, top: startY },
       theme: "grid",
       styles: {
         fontSize: 8,
@@ -383,10 +512,14 @@ export async function gerarPdfRelatorio(
         halign: "center",
       },
       columnStyles: {
-        0: { halign: "center" },
-        2: { halign: "center" },
-        4: { halign: "center" },
-        5: { halign: "center" },
+        0: { cellWidth: 30, halign: "center" },
+        1: { cellWidth: 197 },
+        2: { cellWidth: 42, halign: "center" },
+        3: { cellWidth: 122 },
+        4: { cellWidth: 58, halign: "center" },
+        5: { cellWidth: 92, halign: "center" },
+        6: { cellWidth: 104 },
+        7: { cellWidth: 136 },
       },
       alternateRowStyles: { fillColor: COR_ALT },
       didDrawPage: () => {
@@ -409,7 +542,10 @@ export async function gerarPdfRelatorio(
   doc.save(nomeArquivoPdf(grupos, meta));
 }
 
-export function nomeArquivoPdf(grupos: GrupoRelatorio[], meta?: MetaRelatorio): string {
+export function nomeArquivoPdf(
+  grupos: GrupoRelatorio[],
+  meta?: MetaRelatorio
+): string {
   const ts = new Date();
   const sufixo = `${ts.getFullYear()}${pad2(ts.getMonth() + 1)}${pad2(ts.getDate())}-${pad2(ts.getHours())}${pad2(ts.getMinutes())}`;
   if (grupos.length === 1) {
@@ -418,7 +554,10 @@ export function nomeArquivoPdf(grupos: GrupoRelatorio[], meta?: MetaRelatorio): 
   return `CronogramaMontaJE-${meta ? `${meta.ano}-` : ""}${sufixo}.pdf`;
 }
 
-export function nomeArquivoCsv(grupos: GrupoRelatorio[], meta?: MetaRelatorio): string {
+export function nomeArquivoCsv(
+  grupos: GrupoRelatorio[],
+  meta?: MetaRelatorio
+): string {
   const ts = new Date();
   const sufixo = `${ts.getFullYear()}${pad2(ts.getMonth() + 1)}${pad2(ts.getDate())}-${pad2(ts.getHours())}${pad2(ts.getMinutes())}${pad2(ts.getSeconds())}`;
   if (grupos.length === 1) {
