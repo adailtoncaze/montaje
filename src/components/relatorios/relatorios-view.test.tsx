@@ -156,7 +156,7 @@ describe("RelatoriosView — CSV com duração recalculada", () => {
 
     await waitFor(() => expect(mockBaixar).toHaveBeenCalledTimes(1));
     const linhas = parseCSV(mockBaixar.mock.calls[0][0]);
-    expect(linhas[0].Equipe).toBe("Equipe Alfa");
+    expect(linhas[0]["LAT Origem"]).toBe("GPS 1");
     expect(linhas[0]["Local de votação"]).toBe("Escola A");
     expect(linhas[0].Município).toBe("João Pessoa");
     expect(linhas[0].Status).toBe("Pendente");

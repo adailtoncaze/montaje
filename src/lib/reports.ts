@@ -337,7 +337,6 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
     "Data",
     "Horário (início – fim)",
     "Tempo",
-    "Equipe",
     "LAT Origem",
     "Status",
     "Observações",
@@ -359,7 +358,6 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
           formatDataBr(a.data_hora_planejada),
           hor.intervalo,
           hor.tempo,
-          a.equipe?.nome ?? "",
           a.equipe?.lat_origem ?? "",
           // Status efetivo, mesmo critério da tela (pendente com horário
           // passado vira "Atrasado") — o status cru do banco divergia.
@@ -595,19 +593,20 @@ export async function gerarPdfRelatorio(
   const RODAPE_Y = 566; // linha do rodapé: limite inferior útil da página
 
   // Larguras das colunas (soma igual a `tableWidth` para não sobrar 0.89pt).
+  // Sem a coluna de Equipe, o espaço liberado foi todo para o Local de
+  // votação (nomes/endereços longos não são mais cortados).
   // Local de votação e LAT Origem ficam alinhados à esquerda.
   const LARG_COLS: Record<
     number,
     { cellWidth: number; halign?: "left" | "center" | "right" }
   > = {
     0: { cellWidth: 30 },
-    1: { cellWidth: 197, halign: "left" },
+    1: { cellWidth: 301, halign: "left" },
     2: { cellWidth: 42 },
     3: { cellWidth: 122 },
     4: { cellWidth: 58 },
     5: { cellWidth: 92 },
-    6: { cellWidth: 104 },
-    7: { cellWidth: 136, halign: "left" },
+    6: { cellWidth: 136, halign: "left" },
   };
   const SOMA_COLS = Object.values(LARG_COLS).reduce(
     (soma, c) => soma + c.cellWidth,
@@ -623,7 +622,6 @@ export async function gerarPdfRelatorio(
     "Tipo de atividade",
     "Data",
     "Horário\n(início – fim)",
-    "Equipe(s)",
     "LAT Origem",
   ]];
 
@@ -790,7 +788,6 @@ export async function gerarPdfRelatorio(
           styles: { halign: "center" },
         },
         { content: horarioCell, styles: { halign: "center" } },
-        a.equipe?.nome ?? "—",
         a.equipe?.lat_origem ?? "",
       ];
     };

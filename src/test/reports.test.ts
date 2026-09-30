@@ -371,7 +371,7 @@ describe("montaCsv", () => {
   it("usa ; como separador e \\r\\n como quebra de linha", () => {
     const linhas = montaCsv(grupos).replace(/^\uFEFF/, "").split("\r\n");
     expect(linhas[0]).toBe(
-      "Seq.;Local de votação;Endereço;Município;Qtd. seções;Tipo de atividade;Data;Horário (início – fim);Tempo;Equipe;LAT Origem;Status;Observações"
+      "Seq.;Local de votação;Endereço;Município;Qtd. seções;Tipo de atividade;Data;Horário (início – fim);Tempo;LAT Origem;Status;Observações"
     );
     expect(linhas).toHaveLength(4); // cabeçalho + 3 atividades
   });
