@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { Card, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { getLocalDateFromTimestamp, formatTimeBr, formatLocalDate, daysUntil } from "@/lib/utils/date";
+import { formatTimeBr, hojeSaoPaulo } from "@/lib/utils/date";
 import { TIPO_ATIVIDADE_LABEL } from "@/lib/constants";
-import { getStatusEfetivo } from "@/lib/utils/atividades";
+import { getStatusEfetivo, montaAgenda } from "@/lib/utils/atividades";
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
 import type { Tables } from "@/types/supabase";
 
@@ -43,59 +43,33 @@ export function PainelView({
   locais,
   isAdmin,
 }: PainelViewProps) {
-  const agora = new Date();
-  const hoje = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate());
-  const hojeStr = getLocalDateFromTimestamp(agora.toISOString());
+  // Instante fixo por montagem: mantém os useMemo estáveis entre renders.
+  const agora = useMemo(() => new Date(), []);
 
   // KPIs
   const kpis = useMemo(() => {
     const total = atividades.length;
-    const concluidas = atividades.filter((a) => getStatusEfetivo(a) === "concluido").length;
-    const emAndamento = atividades.filter((a) => getStatusEfetivo(a) === "em_andamento").length;
-    const pendentes = atividades.filter((a) => getStatusEfetivo(a) === "pendente").length;
-    const atrasadas = atividades.filter((a) => getStatusEfetivo(a) === "atrasado").length;
+    const concluidas = atividades.filter((a) => getStatusEfetivo(a, agora) === "concluido").length;
+    const emAndamento = atividades.filter((a) => getStatusEfetivo(a, agora) === "em_andamento").length;
+    const pendentes = atividades.filter((a) => getStatusEfetivo(a, agora) === "pendente").length;
+    const atrasadas = atividades.filter((a) => getStatusEfetivo(a, agora) === "atrasado").length;
     const pctConcluidas = total > 0 ? Math.round((concluidas / total) * 100) : 0;
 
     return { total, concluidas, emAndamento, pendentes, atrasadas, pctConcluidas };
-  }, [atividades]);
+  }, [atividades, agora]);
 
   // Agenda: atividades pendentes de hoje aos próximos 7 dias, agrupadas por dia
-  const agenda = useMemo(() => {
-    const limite = new Date(hoje);
-    limite.setDate(limite.getDate() + 7);
-    const limiteStr = getLocalDateFromTimestamp(limite.toISOString());
-    const lista = atividades
-      .filter((a) => {
-        const dataStr = getLocalDateFromTimestamp(a.data_hora_planejada);
-        return dataStr >= hojeStr && dataStr <= limiteStr && getStatusEfetivo(a) !== "concluido";
-      })
-      .sort((a, b) => new Date(a.data_hora_planejada).getTime() - new Date(b.data_hora_planejada).getTime())
-      .slice(0, 12);
-
-    const grupos: { dataStr: string; rotulo: string; atividades: AtividadeCompleta[] }[] = [];
-    for (const a of lista) {
-      const dataStr = getLocalDateFromTimestamp(a.data_hora_planejada);
-      const ultimo = grupos[grupos.length - 1];
-      if (!ultimo || ultimo.dataStr !== dataStr) {
-        const diff = daysUntil(dataStr);
-        const rotulo = diff === 0 ? "Hoje" : diff === 1 ? "Amanhã" : formatLocalDate(dataStr, "EEE, d MMM");
-        grupos.push({ dataStr, rotulo, atividades: [a] });
-      } else {
-        ultimo.atividades.push(a);
-      }
-    }
-    return grupos;
-  }, [atividades]);
+  const agenda = useMemo(() => montaAgenda(atividades, 7, 12, agora), [atividades, agora]);
 
   // Atividades por tipo
   const porTipo = useMemo(() => {
     const tipos = ["instalacao", "verificacao", "recolhimento_midia", "recolhimento_urna"] as const;
     return tipos.map((tipo) => {
       const total = atividades.filter((a) => a.tipo === tipo).length;
-      const concluidas = atividades.filter((a) => a.tipo === tipo && getStatusEfetivo(a) === "concluido").length;
+      const concluidas = atividades.filter((a) => a.tipo === tipo && getStatusEfetivo(a, agora) === "concluido").length;
       return { tipo, total, concluidas };
     });
-  }, [atividades]);
+  }, [atividades, agora]);
 
   if (!config) {
     return (

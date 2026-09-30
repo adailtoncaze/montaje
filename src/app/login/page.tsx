@@ -1,38 +1,38 @@
 "use client";
 
+import { useEffect } from "react";
+import { useActionState } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Logo } from "@/components/ui/logo";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { entrar } from "./actions";
 
 const inputClass =
   "h-8 w-full rounded-md border border-stroke-strong bg-surface px-3 text-body text-fg placeholder:text-fg-4 focus-visible:border-brand focus-visible:outline-none";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
-  const [erro, setErro] = useState<string | null>(null);
-  const [carregando, setCarregando] = useState(false);
+  const [estado, formAction, pendente] = useActionState(entrar, { erro: null });
 
-  async function entrar(e: React.FormEvent) {
-    e.preventDefault();
-    setCarregando(true);
-    setErro(null);
-    const { error } = await createClient().auth.signInWithPassword({
-      email,
-      password: senha,
-    });
-    setCarregando(false);
-    if (error) {
-      setErro("E-mail ou senha incorretos. Confira os dados e tente de novo.");
-      return;
-    }
-    router.replace("/painel");
-    router.refresh();
-  }
+  // Sessão já existente nos cookies (ex.: voltou com a seta do navegador
+  // depois de logar). A leitura é local (getSession), sem rede. O login em si
+  // acontece na Server Action, que grava o cookie e redireciona de uma vez.
+  useEffect(() => {
+    let ativo = true;
+    createClient()
+      .auth.getSession()
+      .then(({ data }) => {
+        if (ativo && data.session) router.replace("/painel");
+      })
+      .catch(() => {
+        // Sem sessão ou erro ao ler: permanece na tela de login.
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [router]);
 
   return (
     <main className="flex min-h-dvh items-center justify-center p-4">
@@ -44,15 +44,14 @@ export default function LoginPage() {
           <h1 className="text-title font-semibold">Entrar no MontaJE</h1>
         </div>
 
-        <form onSubmit={entrar} className="space-y-4">
+        <form action={formAction} className="space-y-4">
           <label className="block space-y-1">
             <span className="text-caption font-semibold text-fg-2">E-mail</span>
             <input
               type="email"
+              name="email"
               autoComplete="email"
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
               className={inputClass}
             />
           </label>
@@ -60,17 +59,16 @@ export default function LoginPage() {
             <span className="text-caption font-semibold text-fg-2">Senha</span>
             <input
               type="password"
+              name="senha"
               autoComplete="current-password"
               required
-              value={senha}
-              onChange={(e) => setSenha(e.target.value)}
               className={inputClass}
             />
           </label>
 
-          {erro && (
+          {estado.erro && (
             <p role="alert" className="text-caption text-danger-fg">
-              {erro}
+              {estado.erro}
             </p>
           )}
 
@@ -78,9 +76,9 @@ export default function LoginPage() {
             type="submit"
             variant="primary"
             className="w-full"
-            disabled={carregando}
+            disabled={pendente}
           >
-            {carregando ? "Entrando…" : "Entrar"}
+            {pendente ? "Entrando…" : "Entrar"}
           </Button>
         </form>
       </Card>

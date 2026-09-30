@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Tables, TablesInsert, TablesUpdate } from "@/types/supabase";
+import type { Tables } from "@/types/supabase";
 import { cache } from "react";
-import { parseSaoPauloDate } from "@/lib/utils/date";
 
 /** Busca a configuração ativa da eleição. */
 export const getConfiguracaoEleicao = cache(async (): Promise<Tables<"configuracao_eleicao"> | null> => {
@@ -78,15 +77,3 @@ export type AtividadeCompleta = Tables<"atividades"> & {
   local: Tables<"locais_votacao"> | null;
   equipe: Tables<"equipes"> | null;
 };
-
-/** Calcula o status efetivo considerando atraso (replica a view atividades_com_status). */
-export function getStatusEfetivo(atividade: AtividadeCompleta): "pendente" | "em_andamento" | "concluido" | "atrasado" {
-  const { status, data_hora_planejada } = atividade;
-  if (status === "pendente" || status === "em_andamento") {
-    const agora = new Date();
-    // data_hora_planejada é horário de parede (America/Sao_Paulo)
-    const planejada = parseSaoPauloDate(data_hora_planejada);
-    if (planejada < agora) return "atrasado";
-  }
-  return status;
-}

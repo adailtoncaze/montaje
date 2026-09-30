@@ -1,58 +1,111 @@
 /**
- * Utilitário mínimo de parse de CSV.
- * Suporta delimitador `,`, aspas duplas e vírgula dentro de aspas.
- * Não trata quebras de linha dentro de campos entre aspas
- * (aceitável para CSVs gerados por Excel/Google Sheets sem isso).
+ * Utilitário de parse de CSV (RFC 4180).
+ *
+ * - Detecta automaticamente o delimitador: o Excel em pt-BR exporta com `;`
+ *   (é o mesmo separador usado por `montaCsv` nos relatórios), enquanto o
+ *   padrão CSV internacional usa `,`.
+ * - Treat campos com delimitador, aspas duplas ("" = aspas literais) e
+ *   quebras de linha dentro de aspas — necessário para reimportar o CSV
+ *   gerado pela tela de relatórios, cujas observações podem ter quebras.
  */
 
 export interface CsvRow {
   [header: string]: string;
 }
 
-function parseLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
+const DELIMITADORES = [";", ",", "\t", "|"] as const;
 
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          current += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        current += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ",") {
-      result.push(current);
-      current = "";
-    } else {
-      current += ch;
+/** Delimitador da primeira linha de dados (fora de aspas). */
+export function detectaDelimitador(text: string): string {
+  const linha = text
+    .replace(/^\uFEFF/, "")
+    .split(/\r?\n/)
+    .find((l) => l.trim() !== "");
+  if (!linha) return ",";
+
+  let melhor = ",";
+  let melhorContagem = -1;
+  for (const d of DELIMITADORES) {
+    let contagem = 0;
+    let dentroDeAspas = false;
+    for (const ch of linha) {
+      if (ch === '"') dentroDeAspas = !dentroDeAspas;
+      else if (ch === d && !dentroDeAspas) contagem++;
+    }
+    if (contagem > melhorContagem) {
+      melhor = d;
+      melhorContagem = contagem;
     }
   }
-  result.push(current);
-  return result.map((s) => s.trim());
+  return melhor;
+}
+
+/** Divide o texto em registros, respeitando aspas e quebras internas. */
+export function parseRegistros(text: string, delimitador = ","): string[][] {
+  const registros: string[][] = [];
+  let registro: string[] = [];
+  let campo = "";
+  let dentroDeAspas = false;
+  let sawContent = false;
+
+  const fechaCampo = () => {
+    registro.push(campo.trim());
+    campo = "";
+  };
+  const fechaRegistro = () => {
+    fechaCampo();
+    // Ignora linhas em branco (registros com um único campo vazio).
+    if (registro.length > 1 || registro[0] !== "") registros.push(registro);
+    registro = [];
+    sawContent = false;
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (dentroDeAspas) {
+      if (ch === '"') {
+        if (text[i + 1] === '"') {
+          campo += '"';
+          i++;
+        } else {
+          dentroDeAspas = false;
+        }
+      } else {
+        campo += ch;
+      }
+      continue;
+    }
+    if (ch === '"') {
+      dentroDeAspas = true;
+      sawContent = true;
+    } else if (ch === delimitador) {
+      fechaCampo();
+      sawContent = true;
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      if (sawContent || campo !== "" || registro.length > 0) fechaRegistro();
+    } else {
+      campo += ch;
+      if (ch.trim() !== "") sawContent = true;
+    }
+  }
+  if (sawContent || campo !== "" || registro.length > 0) fechaRegistro();
+  return registros;
 }
 
 export function parseCSV(text: string): CsvRow[] {
   const content = text.replace(/^\uFEFF/, ""); // remove BOM
-  const lines = content.split(/\r?\n/).filter((l) => l.trim() !== "");
-  if (lines.length < 2) return [];
+  const registros = parseRegistros(content, detectaDelimitador(content));
+  if (registros.length < 2) return [];
 
-  const headers = parseLine(lines[0]);
+  const headers = registros[0].map((h) => h.trim());
   const rows: CsvRow[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseLine(lines[i]);
+  for (let i = 1; i < registros.length; i++) {
+    const values = registros[i];
     const row: CsvRow = {};
     headers.forEach((header, idx) => {
-      row[header.trim()] = (values[idx] ?? "").trim();
+      row[header] = (values[idx] ?? "").trim();
     });
     rows.push(row);
   }
@@ -60,12 +113,18 @@ export function parseCSV(text: string): CsvRow[] {
   return rows;
 }
 
-/** Normaliza o nome de um cabeçalho para comparação (sem acentos, minúsculo). */
+/**
+ * Normaliza o nome de um cabeçalho para comparação: minúsculo, sem acentos e
+ * sem diferenciação de separadores — "Qtd_seções", "Qtd. Seções" e "qtd secoes"
+ * passam a ser equivalentes, o que evita rejeitar uma planilha só porque o
+ * usuário digitou o cabeçalho de um jeito um pouco diferente.
+ */
 export function normHeader(value: string): string {
   return value
-    .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
 }
 

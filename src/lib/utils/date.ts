@@ -34,38 +34,54 @@ export function formatLocalDate(
 }
 
 /**
- * Calcula diferença em dias entre hoje (local) e uma data "YYYY-MM-DD".
- * Útil para contadores regressivos.
+ * Fuso de referência do app: as atividades e as datas da eleição são
+ * cadastradas no horário de São Paulo (UTC-3 fixo desde 2019, sem horário
+ * de verão). Usar o fuso do navegador/desempenho do servidor produzia
+ * divergência de um dia entre o servidor e o cliente.
  */
-export function daysUntil(dateStr: string): number {
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const alvo = parseLocalDate(dateStr);
-  const diff = Math.ceil((alvo.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
-  return diff;
+export const TZ_APP = "America/Sao_Paulo";
+
+/** Data de hoje (YYYY-MM-DD) no fuso do app — fonte única de "hoje". */
+export function hojeSaoPaulo(agora: Date = new Date()): string {
+  return agora.toLocaleDateString("en-CA", { timeZone: TZ_APP });
+}
+
+/** Soma (ou subtrai) dias a uma data "YYYY-MM-DD" sem passar por Date. */
+export function addDias(dateStr: string, dias: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const base = Date.UTC(y, m - 1, d) + dias * 86_400_000;
+  const dt = new Date(base);
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+/** Diferença em dias inteiros entre duas datas "YYYY-MM-DD" (b - a). */
+export function diffDias(a: string, b: string): number {
+  const [ay, am, ad] = a.split("-").map(Number);
+  const [by, bm, bd] = b.split("-").map(Number);
+  const ta = Date.UTC(ay, am - 1, ad);
+  const tb = Date.UTC(by, bm - 1, bd);
+  return Math.round((tb - ta) / 86_400_000);
 }
 
 /**
- * Verifica se uma data "YYYY-MM-DD" é hoje (no fuso local).
+ * Calcula a diferença em dias entre hoje (fuso do app) e uma data
+ * "YYYY-MM-DD". Negativo = a data já passou.
  */
-export function isToday(dateStr: string): boolean {
-  const hoje = new Date();
-  const alvo = parseLocalDate(dateStr);
-  return (
-    hoje.getFullYear() === alvo.getFullYear() &&
-    hoje.getMonth() === alvo.getMonth() &&
-    hoje.getDate() === alvo.getDate()
-  );
+export function daysUntil(dateStr: string, hoje: string = hojeSaoPaulo()): number {
+  return diffDias(hoje, dateStr);
 }
 
-/**
- * Verifica se uma data "YYYY-MM-DD" já passou (no fuso local).
- */
-export function isPast(dateStr: string): boolean {
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
-  const alvo = parseLocalDate(dateStr);
-  return alvo < hoje;
+/** Verifica se uma data "YYYY-MM-DD" é hoje (no fuso do app). */
+export function isToday(dateStr: string, hoje: string = hojeSaoPaulo()): boolean {
+  return dateStr === hoje;
+}
+
+/** Verifica se uma data "YYYY-MM-DD" já passou (no fuso do app). */
+export function isPast(dateStr: string, hoje: string = hojeSaoPaulo()): boolean {
+  return diffDias(hoje, dateStr) < 0;
 }
 
 /**

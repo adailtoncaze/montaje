@@ -19,6 +19,13 @@ import {
   TIPO_EQUIPE_LABEL,
 } from "@/lib/constants";
 import { LOGO_SVG } from "@/lib/logo-svg";
+import {
+  calculaDuracaoMinutos,
+  formatarDuracao,
+  getStatusEfetivo,
+  minutosDoDia,
+} from "@/lib/utils/atividades";
+import { getLocalDateFromTimestamp } from "@/lib/utils/date";
 
 /* ------------------------------------------------------------------ */
 /*  Tipos públicos                                                     */
@@ -39,6 +46,7 @@ export interface FiltrosRelatorio {
 }
 
 export interface GrupoEquipeResumo {
+  id: string;
   nome: string;
   tipo: string;
   membros: MembroResumido[];
@@ -83,41 +91,68 @@ export function formataTimestamp(d: Date): string {
   return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
 }
 
-function formatarDuracao(min: number): string {
-  if (!Number.isFinite(min)) return "";
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+export { formatarDuracao };
+
+/** Data (YYYY-MM-DD) de uma atividade, com o mesmo fuso de parede do app. */
+function diaDaAtividade(a: AtividadeCompleta): string {
+  return getLocalDateFromTimestamp(a.data_hora_planejada ?? "");
 }
 
-/** Intervalo início–fim e tempo total da atividade (p/ coluna Horário). */
-function horarioAtividade(a: AtividadeCompleta): {
+/**
+ * Início planejado da atividade (HH:mm).
+ * `inicio_planejado` é a fonte da verdade (o que foi digitado no formulário);
+ * `data_hora_planejada` é apenas o fallback para atividades antigas.
+ */
+function inicioAtividade(a: AtividadeCompleta): string {
+  const doCampo = a.inicio_planejado ?? "";
+  if (minutosDoDia(doCampo) !== null) return doCampo.slice(0, 5);
+  const daData = formatHora(a.data_hora_planejada);
+  return daData;
+}
+
+/**
+ * Intervalo início–fim e tempo total da atividade (coluna Horário).
+ *
+ * A duração é SEMPRE derivada dos horários planejados. Usar a coluna
+ * `duracao_minutos` diretamente fazia o relatório exibir o valor antigo
+ * quando o Início/Fim eram editados (o trigger do banco só recalcula a
+ * duração quando ela é NULL), então o "Tempo" não batia com o intervalo.
+ */
+export function horarioAtividade(a: AtividadeCompleta): {
   intervalo: string;
   tempo: string;
+  inicio: string;
+  fim: string;
+  duracaoMinutos: number | null;
 } {
-  // O "início" é o horário planejado digitado no formulário (inicio_planejado).
-  // data_hora_planejada guarda a data, mas a parte de hora é preenchida com a
-  // hora da criação da atividade ("hora atual") — não deve ser usada aqui.
-  const inicio = a.inicio_planejado
-    ? a.inicio_planejado.slice(0, 5)
-    : formatHora(a.data_hora_planejada);
-  if (!inicio) return { intervalo: "", tempo: "" };
-
-  let fim =
-    a.fim_planejado && a.fim_planejado.length >= 5
-      ? a.fim_planejado.slice(0, 5)
-      : "";
-  if (!fim && a.duracao_minutos != null) {
-    const [h, m] = inicio.split(":").map(Number);
-    const total = h * 60 + m + a.duracao_minutos;
-    fim = `${pad2(Math.floor(total / 60) % 24)}:${pad2(total % 60)}`;
+  const inicio = inicioAtividade(a);
+  if (!inicio) {
+    return { intervalo: "", tempo: "", inicio: "", fim: "", duracaoMinutos: null };
   }
 
-  const intervalo = fim ? `${inicio} – ${fim}` : inicio;
-  const tempo =
-    a.duracao_minutos != null ? formatarDuracao(a.duracao_minutos) : "";
-  return { intervalo, tempo };
+  const fimCampo = a.fim_planejado ?? "";
+  let fim = minutosDoDia(fimCampo) !== null ? fimCampo.slice(0, 5) : "";
+  let duracao = calculaDuracaoMinutos(inicio, fim);
+
+  // Sem fim explícito: deriva da duração gravada (ou 120 min, como o banco).
+  if (!fim) {
+    const duracaoInformada =
+      a.duracao_minutos != null && a.duracao_minutos > 0
+        ? a.duracao_minutos
+        : 120;
+    const base = minutosDoDia(inicio)!;
+    const total = base + duracaoInformada;
+    fim = `${pad2(Math.floor(total / 60) % 24)}:${pad2(total % 60)}`;
+    duracao = duracaoInformada;
+  }
+
+  return {
+    intervalo: `${inicio} – ${fim}`,
+    tempo: duracao != null ? formatarDuracao(duracao) : "",
+    inicio,
+    fim,
+    duracaoMinutos: duracao,
+  };
 }
 
 /** Nome do local de votação com o endereço completo na linha de baixo. */
@@ -137,6 +172,16 @@ function chaveMunicipio(a: AtividadeCompleta): string {
   return mun === "" ? "\uffff" : mun;
 }
 
+/** Sentinelas aceitos pelos filtros ("todas" e "todos"). */
+function semFiltro(valor: IdFiltro | undefined): boolean {
+  return !valor || valor === "todas" || valor === "todos";
+}
+
+/** Data (YYYY-MM-DD) no fuso de parede do app — a mesma usada na tela. */
+function dataAtividade(a: AtividadeCompleta): string {
+  return getLocalDateFromTimestamp(a.data_hora_planejada ?? "");
+}
+
 export function filtraAtividades(
   atividades: AtividadeCompleta[],
   f: FiltrosRelatorio
@@ -144,10 +189,10 @@ export function filtraAtividades(
   return atividades
     .filter((a) => {
       if (f.tipo !== "todas" && a.tipo !== f.tipo) return false;
-      if (f.equipeId !== "todas" && a.equipe_id !== f.equipeId) return false;
-      if (f.municipio !== "todos" && a.local?.municipio !== f.municipio)
+      if (!semFiltro(f.equipeId) && a.equipe_id !== f.equipeId) return false;
+      if (!semFiltro(f.municipio) && a.local?.municipio !== f.municipio)
         return false;
-      const dia = (a.data_hora_planejada ?? "").slice(0, 10);
+      const dia = dataAtividade(a);
       if (f.dataInicio && dia < f.dataInicio) return false;
       if (f.dataFim && dia > f.dataFim) return false;
       return true;
@@ -157,11 +202,14 @@ export function filtraAtividades(
       // juntas e a linha com o nome do município abre cada bloco.
       const m = chaveMunicipio(x).localeCompare(chaveMunicipio(y));
       if (m !== 0) return m;
-      const d = (x.data_hora_planejada ?? "").localeCompare(
-        y.data_hora_planejada ?? ""
-      );
+      const d = dataAtividade(x).localeCompare(dataAtividade(y));
       if (d !== 0) return d;
-      return (x.sequencia ?? 0) - (y.sequencia ?? 0);
+      // Mesmo critério do cronograma (`agrupaCronogramaPorData`): atividades
+      // sem sequência vão por último.
+      return (
+        (x.sequencia ?? Number.MAX_SAFE_INTEGER) -
+        (y.sequencia ?? Number.MAX_SAFE_INTEGER)
+      );
     });
 }
 
@@ -223,7 +271,7 @@ export function agrupaPorDia(
 ): GrupoRelatorio[] {
   const map = new Map<string, GrupoRelatorio>();
   for (const a of lista) {
-    const dia = (a.data_hora_planejada ?? "").slice(0, 10);
+    const dia = dataAtividade(a);
     if (!dia) continue;
     let g = map.get(dia);
     if (!g) {
@@ -233,12 +281,14 @@ export function agrupaPorDia(
     g.atividades.push(a);
 
     // Registra a equipe da atividade no bloco do dia (nome, tipo e membros —
-    // as mesmas informações do bloco agrupado por equipe).
+    // as mesmas informações do bloco agrupado por equipe). A chave é o id:
+    // duas equipes homônimas são entradas distintas.
     if (a.equipe) {
       const equipe = a.equipe;
       if (!g.equipes) g.equipes = [];
-      if (!g.equipes.some((e) => e.nome === equipe.nome)) {
+      if (!g.equipes.some((e) => e.id === equipe.id)) {
         g.equipes.push({
+          id: equipe.id,
           nome: equipe.nome,
           tipo:
             TIPO_EQUIPE_LABEL[equipe.tipo as keyof typeof TIPO_EQUIPE_LABEL] ??
@@ -256,7 +306,7 @@ export function agrupaPorDia(
     for (const e of g.equipes) {
       const tipos = new Set(
         g.atividades
-          .filter((a) => a.equipe?.nome === e.nome)
+          .filter((a) => a.equipe?.id === e.id)
           .map((a) => a.tipo)
       );
       const dinamico = rotuloTiposAtividades([...tipos]);
@@ -275,7 +325,7 @@ function csvEscape(v: string): string {
   return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-/** Monta o conteúdo CSV (separador ";", formato pt-BR). */
+/** Monta o conteúdo CSV (separador ";", formato pt-BR, com BOM UTF-8). */
 export function montaCsv(grupos: GrupoRelatorio[]): string {
   const headers = [
     "Seq.",
@@ -294,11 +344,13 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
   ];
   const linhas: string[] = [headers.map(csvEscape).join(";")];
   for (const g of grupos) {
-    g.atividades.forEach((a, i) => {
+    g.atividades.forEach((a) => {
       const hor = horarioAtividade(a);
       linhas.push(
         [
-          String(i + 1),
+          // Seq. = sequência cadastrada na atividade (o que o cronograma
+          // ordena); usar a posição da linha deixava o valor divergente.
+          a.sequencia != null ? String(a.sequencia) : "",
           a.local?.nome ?? "",
           a.local?.endereco ?? "",
           a.local?.municipio ?? "",
@@ -309,7 +361,9 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
           hor.tempo,
           a.equipe?.nome ?? "",
           a.equipe?.lat_origem ?? "",
-          STATUS_ATIVIDADE_LABEL[a.status] ?? a.status,
+          // Status efetivo, mesmo critério da tela (pendente com horário
+          // passado vira "Atrasado") — o status cru do banco divergia.
+          STATUS_ATIVIDADE_LABEL[getStatusEfetivo(a)] ?? a.status,
           a.observacoes ?? "",
         ]
           .map(csvEscape)
@@ -317,7 +371,8 @@ export function montaCsv(grupos: GrupoRelatorio[]): string {
       );
     });
   }
-  return linhas.join("\r\n");
+  // BOM UTF-8: sem ele o Excel (pt-BR) abre os acentos quebrados.
+  return `\uFEFF${linhas.join("\r\n")}`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -687,14 +742,17 @@ export async function gerarPdfRelatorio(
         ? Math.ceil(170 + linhasMembros.length * 11.5 + 10)
         : 178;
 
-    // Linha da atividade -> células (Seq. contínua em todo o grupo)
-    let seq = 0;
+    // Linha da atividade -> células. Seq. = sequência cadastrada (o que o
+    // cronograma ordena); um contador por grupo deixava o número divergente.
     const montarLinha = (a: AtividadeCompleta): RowInput => {
       const hor = horarioAtividade(a);
       const horarioCell =
         [hor.intervalo, hor.tempo].filter(Boolean).join("\n") || "—";
       return [
-        { content: String(++seq), styles: { halign: "center" } },
+        {
+          content: a.sequencia != null ? String(a.sequencia) : "—",
+          styles: { halign: "center" },
+        },
         montarCelulaLocal(a),
         {
           content: a.local ? String(a.local.qtd_secoes) : "—",

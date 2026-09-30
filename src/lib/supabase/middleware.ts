@@ -27,9 +27,25 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // `getUser()` valida o token no servidor do Supabase (autoritativo). Em
+  // intranets o acesso ao Supabase pode falhar de forma intermitente; quando
+  // isso acontece, em vez de derrubar sessões válidas para o /login, caímos
+  // na `getSession()` (leitura local dos cookies). As páginas protegidas
+  // continuam validando com `getUser()` via `requireAuth`/`getPerfil`.
+  let user = null;
+  try {
+    const {
+      data: { user: usuario },
+      error,
+    } = await supabase.auth.getUser();
+    if (error) throw error;
+    user = usuario;
+  } catch {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    user = session?.user ?? null;
+  }
 
   const isPublic = PUBLIC_PATHS.some((p) => request.nextUrl.pathname.startsWith(p));
 

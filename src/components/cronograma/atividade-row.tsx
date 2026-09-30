@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { TipoAtividadeBadge, StatusAtividadeBadge } from "./filtros";
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
-import { getStatusEfetivo } from "@/lib/utils/atividades";
+import { getStatusEfetivo, isProximo as isProximoAtividade } from "@/lib/utils/atividades";
 import { formatTimeBr } from "@/lib/utils/date";
 
 interface AtividadeRowProps {
@@ -24,7 +24,7 @@ export function AtividadeRow({
   const { local, equipe, tipo, data_hora_planejada, data_hora_real, status, observacoes } = atividade;
   const statusEfetivo = getStatusEfetivo(atividade);
 
-  const isProximo = status === "pendente" && isProximoAgora(data_hora_planejada);
+  const isProximo = isProximoAtividade(atividade);
   const isAtrasado = statusEfetivo === "atrasado";
 
   return (
@@ -117,11 +117,4 @@ export function AtividadeRow({
       </td>
     </tr>
   );
-}
-
-function isProximoAgora(iso: string): boolean {
-  const agora = new Date();
-  const planejada = new Date(iso);
-  const diffMin = (planejada.getTime() - agora.getTime()) / 60000;
-  return diffMin > 0 && diffMin <= 30; // 30 min = ALERTA_PROXIMO_MINUTOS
 }

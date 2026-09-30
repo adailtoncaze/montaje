@@ -48,6 +48,8 @@ Migrações atuais:
 | `0002_atividades_detalhamento.sql` | Sequência, horários planejados, duração |
 | `0003_tipo_equipe_4_valores.sql` | Amplia `tipo_equipe` de 2 para 4 valores (alinhado a `tipo_atividade`) |
 | `0004_atividades_data_wallclock.sql` | Corrige datas do cronograma (horário de parede, sem timezone) |
+| `0005_performance_indexes.sql` | Índices de status/tipo e listagens ordenadas por nome |
+| `0006_atividades_duracao_recalculo.sql` | Recalcula a duração ao editar Início/Fim (bug da coluna "Tempo" dos relatórios) e faz o backfill das durações divergentes |
 
 > ⚠️ **Para produção, deixe as migrações aplicadas no Supabase antes do deploy.**
 
@@ -59,6 +61,32 @@ Não há tela de cadastro: crie os usuários no painel do Supabase
 ```sql
 update perfis set perfil = 'admin' where id = '<uuid do usuário>';
 ```
+
+---
+
+## Testes
+
+Suíte de testes unitários com **Vitest** + **Testing Library** (lógica pura e
+componentes React com jsdom). Comandos:
+
+| Comando | O que faz |
+|---|---|
+| `npm test` | Roda toda a suíte uma vez |
+| `npm run test:watch` | Modo watch (desenvolver/editar testes) |
+| `npm run test:coverage` | Roda com relatório de cobertura (v8) em `coverage/` |
+| `npx vitest run <arquivo>` | Roda só um arquivo (ex.: `src/test/reports.test.ts`) |
+
+Organização:
+
+- `src/test/*.test.ts` — lógica pura: datas (`date`), atividades (`atividades`),
+  relatórios (`reports`, incluindo o CSV e o horário recalculado), CSV e constantes.
+- `src/components/**/*.test.tsx` — componentes: `cronograma-view` (formulário,
+  criação/edição/exclusão, ações e filtros), `relatorios-view` (resumo, CSV/PDF
+  e filtros) e `painel-view` (KPIs, agenda e progresso por tipo).
+- `src/test/fixtures.ts` — fábricas de dados (`makeLocal`, `makeEquipe`,
+  `makeAtividade`); `src/test/render.tsx` → `renderComToast` envolve o render com
+  o `ToastProvider`; `src/test/setup.ts` — mocks de navegador (matchMedia,
+  `URL.createObjectURL`, canvas, `<dialog>`) que o jsdom não implementa.
 
 ---
 
@@ -204,7 +232,8 @@ para a intranet.
 | `invalid login credentials` | Usuário criado no Supabase com e-mail/senha corretos? Confira em Authentication → Users. |
 | Login recusa após trocar de domínio | Atualize **Site URL** e **Redirect URLs** no Auth do Supabase. |
 | Datas do cronograma com 1 dia de diferença | Migração `0004` não aplicada no banco. Rode o SQL no SQL Editor. |
-| Tabelas/procedimentos ausentes (erro de SQL/RLS) | Rode as migrações `0001`→`0004` em ordem. |
+| Tabelas/procedimentos ausentes (erro de SQL/RLS) | Rode as migrações `0001`→`0006` em ordem. |
+| Duração ("Tempo") errada nos relatórios | Migração `0006` recalcula ao editar Início/Fim; o app envia `duracao_minutos` sempre. Aplique no banco e recarregue a tela. |
 | Realtime não atualiza | Confira se a publicação `supabase_realtime` inclui `atividades` (migração `0001`). |
 
 ---
@@ -229,13 +258,17 @@ Componentes base: `Button`, `Badge`, `StatusBadge`, `Card`, `Rail` (barra inferi
 ## Estrutura
 
 ```
-src/app/(app)/*        telas protegidas (placeholders)
+src/app/(app)/*        telas protegidas (painel, cronograma, relatórios, ajustes…)
 src/app/login          login (Supabase Auth)
 src/components/ui      primitivos do design system
 src/components/layout  rail, header de página
+src/components/*       views das telas (cronograma, relatórios, painel) + seus testes
+src/lib/utils          lógica pura (atividades, datas no fuso de SP, csv)
+src/lib                actions (server), relatórios, constantes
 src/lib/supabase       clients browser/server/middleware
+src/test               setup, fixtures e testes de lógica pura
 src/types/database.ts  tipos de domínio do PRD
-supabase/migrations    schema, RLS, trigger de auditoria, Realtime
+supabase/migrations    schema, RLS, trigger de auditoria, Realtime, índices, backfill
 ```
 
 Obs.: no Next 16 o `middleware.ts` passou a se chamar `proxy.ts`; o projeto está fixado no Next 15.

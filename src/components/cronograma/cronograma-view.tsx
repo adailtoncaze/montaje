@@ -9,12 +9,23 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/ui/dialog";
-import { FiltrosCronograma, TipoAtividadeBadge, StatusAtividadeBadge } from "./filtros";
+import { FiltrosCronograma, TipoAtividadeBadge, StatusAtividadeBadge, type FiltrosCronograma as FiltrosCronogramaType } from "./filtros";
 import { AtividadeRow } from "./atividade-row";
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
-import type { FiltrosCronograma as FiltrosCronogramaType } from "./filtros";
-import { getStatusEfetivo } from "@/lib/utils/atividades";
-import { getLocalDateFromTimestamp, parseLocalDate, hasTimezone } from "@/lib/utils/date";
+import {
+  agrupaCronogramaPorData,
+  calculaDuracaoMinutos,
+  filtraCronograma,
+  filtrosIniciais,
+  formatarDuracao,
+  getStatusEfetivo,
+  isProximo,
+  montaPayloadAtividade,
+  temFiltrosAtivos as calcTemFiltrosAtivos,
+  validaFormAtividade,
+  type FormAtividade,
+} from "@/lib/utils/atividades";
+import { getLocalDateFromTimestamp, hasTimezone } from "@/lib/utils/date";
 import { criarAtividade, atualizarAtividade, excluirAtividade, iniciarAtividade, concluirAtividade, atualizarObservacoes } from "@/lib/actions/atividades-mutations";
 import { useToast } from "@/components/ui/toast";
 import { useTransition } from "react";
@@ -24,8 +35,8 @@ import type { Tables } from "@/types/supabase";
 
 interface CronogramaViewProps {
   atividades: AtividadeCompleta[];
-  equipes: { id: string; nome: string; tipo: string }[];
-  locais: { id: string; nome: string; municipio: string }[];
+  equipes: Tables<"equipes">[];
+  locais: Tables<"locais_votacao">[];
   defaultDataInicio: string;
   defaultDataFim: string;
   isAdmin: boolean;
@@ -50,24 +61,18 @@ export function CronogramaView({
   }, [todasAtividades]);
 
   // Filtros
-  const [filtros, setFiltros] = useState<FiltrosCronogramaType>({
-    busca: "",
-    status: "todos",
-    tipo: "todos",
-    equipeId: "todos",
-    localId: "todos",
-    dataInicio: defaultDataInicio,
-    dataFim: defaultDataFim,
-  });
+  const [filtros, setFiltros] = useState<FiltrosCronogramaType>(() =>
+    filtrosIniciais(defaultDataInicio, defaultDataFim)
+  );
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 
   // Formulário Nova/Editar Atividade (Admin)
   const [formOpen, setFormOpen] = useState(false);
   const [editando, setEditando] = useState<AtividadeCompleta | null>(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<FormAtividade>({
     local_id: "",
     equipe_id: "",
-    tipo: "instalacao" as "instalacao" | "verificacao" | "recolhimento_midia" | "recolhimento_urna",
+    tipo: "instalacao",
     data_hora_planejada: "",
     sequencia: "",
     inicio_planejado: "",
@@ -84,79 +89,30 @@ export function CronogramaView({
   const [obsText, setObsText] = useState("");
 
   // Aplica filtros
-  const atividadesFiltradas = useMemo(() => {
-    return optimisticAtividades.filter((a) => {
-      if (filtros.busca) {
-        const termo = filtros.busca.toLowerCase();
-        const localNome = a.local?.nome.toLowerCase() ?? "";
-        const localMunicipio = a.local?.municipio.toLowerCase() ?? "";
-        const equipeNome = a.equipe?.nome.toLowerCase() ?? "";
-        const obs = a.observacoes?.toLowerCase() ?? "";
-        if (!localNome.includes(termo) && !localMunicipio.includes(termo) && !equipeNome.includes(termo) && !obs.includes(termo)) {
-          return false;
-        }
-      }
-      const statusEfetivo = getStatusEfetivo(a);
-      if (filtros.status !== "todos" && statusEfetivo !== filtros.status) return false;
-      if (filtros.tipo !== "todos" && a.tipo !== filtros.tipo) return false;
-      if (filtros.equipeId !== "todos" && a.equipe_id !== filtros.equipeId) return false;
-      if (filtros.localId !== "todos" && a.local_id !== filtros.localId) return false;
-
-      const dataLocal = getLocalDateFromTimestamp(a.data_hora_planejada);
-      const inicio = filtros.dataInicio ? new Date(filtros.dataInicio + "T00:00:00") : null;
-      const fim = filtros.dataFim ? new Date(filtros.dataFim + "T23:59:59") : null;
-      // Compara apenas a parte da data (local)
-      const dataPlaneadaLocal = parseLocalDate(dataLocal);
-      if (inicio && dataPlaneadaLocal < inicio) return false;
-      if (fim && dataPlaneadaLocal > fim) return false;
-
-      return true;
-    });
-  }, [optimisticAtividades, filtros]);
+  const atividadesFiltradas = useMemo(
+    () => filtraCronograma(optimisticAtividades, filtros),
+    [optimisticAtividades, filtros]
+  );
 
   // Agrupa por data E ordena por sequência dentro de cada dia
-  const gruposPorData = useMemo(() => {
-    const grupos: Record<string, AtividadeCompleta[]> = {};
-    for (const a of atividadesFiltradas) {
-      const dataKey = getLocalDateFromTimestamp(a.data_hora_planejada);
-      if (!grupos[dataKey]) grupos[dataKey] = [];
-      grupos[dataKey].push(a);
-    }
-    // Ordena por sequência dentro de cada dia
-    Object.keys(grupos).forEach(key => {
-      grupos[key].sort((a, b) => (a.sequencia ?? 999) - (b.sequencia ?? 999));
-    });
-    return grupos;
-  }, [atividadesFiltradas]);
+  const gruposPorData = useMemo(
+    () => agrupaCronogramaPorData(atividadesFiltradas),
+    [atividadesFiltradas]
+  );
 
   const datasOrdenadas = useMemo(() => Object.keys(gruposPorData).sort(), [gruposPorData]);
 
-  const temFiltrosAtivos = useMemo(() => {
-    return (
-      filtros.busca !== "" ||
-      filtros.status !== "todos" ||
-      filtros.tipo !== "todos" ||
-      filtros.equipeId !== "todos" ||
-      filtros.localId !== "todos" ||
-      filtros.dataInicio !== defaultDataInicio ||
-      filtros.dataFim !== defaultDataFim
-    );
-  }, [filtros, defaultDataInicio, defaultDataFim]);
+  const temFiltrosAtivos = useMemo(
+    () => calcTemFiltrosAtivos(filtros, { dataInicio: defaultDataInicio, dataFim: defaultDataFim }),
+    [filtros, defaultDataInicio, defaultDataFim]
+  );
 
   const handleChange = (parciais: Partial<FiltrosCronogramaType>) => {
     setFiltros((prev: FiltrosCronogramaType) => ({ ...prev, ...parciais }));
   };
 
   const handleClear = () => {
-    setFiltros({
-      busca: "",
-      status: "todos",
-      tipo: "todos",
-      equipeId: "todos",
-      localId: "todos",
-      dataInicio: defaultDataInicio,
-      dataFim: defaultDataFim,
-    });
+    setFiltros(filtrosIniciais(defaultDataInicio, defaultDataFim));
   };
 
   const toggleDate = (dataKey: string) => {
@@ -244,39 +200,36 @@ export function CronogramaView({
   };
 
   /** Monta a atividade completa a partir da linha retornada pelo servidor,
-   * preservando equipe/local já carregados ou buscando nas props locais. */
+   *  preservando equipe/local já carregados ou buscando nas props locais.
+   *  Busca SEMPRE pelo id da linha salva: manter o `prev` quando o admin
+   *  trocou equipe/local exibiria a equipe antiga na atualização otimista. */
   const montarAtividadeCompleta = (
     row: Tables<"atividades">,
     prev?: AtividadeCompleta
   ): AtividadeCompleta => {
-    const equipe = (prev?.equipe ??
+    const equipe: Tables<"equipes"> | null =
       equipes.find((e) => e.id === row.equipe_id) ??
-      null) as Tables<"equipes"> | null;
-    const local = (prev?.local ??
+      (prev?.equipe_id === row.equipe_id ? prev.equipe : null);
+    const local: Tables<"locais_votacao"> | null =
       locais.find((l) => l.id === row.local_id) ??
-      null) as Tables<"locais_votacao"> | null;
+      (prev?.local_id === row.local_id ? prev.local : null);
     return { ...row, equipe, local };
   };
 
   const salvarForm = async () => {
-    if (!form.local_id || !form.equipe_id || !form.tipo || !form.data_hora_planejada) {
-      setFormError("Preencha todos os campos obrigatórios.");
+    const erro = validaFormAtividade(form);
+    if (erro) {
+      setFormError(erro);
       return;
     }
 
     try {
       // A coluna data_hora_planejada é `timestamp without time zone` (horário de
       // parede): envia a data/hora literal digitada no formulário, sem offset.
-      const payload = {
-        local_id: form.local_id,
-        equipe_id: form.equipe_id,
-        tipo: form.tipo,
-        data_hora_planejada: form.data_hora_planejada + ":00",
-        sequencia: form.sequencia ? parseInt(form.sequencia, 10) : null,
-        inicio_planejado: form.inicio_planejado ? form.inicio_planejado + ":00" : null,
-        fim_planejado: form.fim_planejado ? form.fim_planejado + ":00" : null,
-        observacoes: form.observacoes || null,
-      };
+      // `montaPayloadAtividade` também envia `duracao_minutos` (sempre, mesmo
+      // null) — sem isso o banco mantinha a duração antiga ao editar Início/Fim
+      // e a coluna "Tempo" dos relatórios ficava desatualizada.
+      const payload = montaPayloadAtividade(form);
 
       if (editando) {
         const { error, data } = await atualizarAtividade(editando.id, payload);
@@ -384,12 +337,12 @@ export function CronogramaView({
     closeObsModal();
   };
 
-  const isProximo = (atividade: AtividadeCompleta) => {
-    if (atividade.status !== "pendente") return false;
-    const agora = new Date();
-    const planejada = new Date(atividade.data_hora_planejada);
-    const diffMin = (planejada.getTime() - agora.getTime()) / 60000;
-    return diffMin > 0 && diffMin <= 30;
+  /** Só o horário planejado muda com o campo Data; preserva a hora atual. */
+  const setDataDoForm = (data: string) => {
+    setForm((prev) => {
+      const [, hora] = prev.data_hora_planejada.split("T");
+      return { ...prev, data_hora_planejada: `${data}T${hora ?? "00:00"}` };
+    });
   };
 
   return (
@@ -568,8 +521,8 @@ export function CronogramaView({
             <Input
               label="Data"
               type="date"
-              value={form.data_hora_planejada.split("T")[0]}
-              onChange={(e) => setForm({ ...form, data_hora_planejada: e.target.value + "T" + form.data_hora_planejada.split("T")[1] })}
+              value={form.data_hora_planejada.split("T")[0] ?? ""}
+              onChange={(e) => setDataDoForm(e.target.value)}
               required
             />
           </div>
@@ -587,6 +540,16 @@ export function CronogramaView({
               onChange={(e) => setForm({ ...form, fim_planejado: e.target.value })}
             />
           </div>
+          {form.inicio_planejado && form.fim_planejado && (
+            <p className="-mt-2 text-caption text-fg-3">
+              Duração:{" "}
+              <span className="font-semibold text-fg-2">
+                {formatarDuracao(
+                  calculaDuracaoMinutos(form.inicio_planejado, form.fim_planejado)
+                ) || "—"}
+              </span>
+            </p>
+          )}
           <Textarea
             label="Observações (opcional)"
             placeholder="Observações sobre a atividade..."
