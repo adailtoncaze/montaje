@@ -14,6 +14,15 @@ export default function AppError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  // Registra sempre no servidor (mesmo em produção) para o erro aparecer
+  // nos logs da plataforma (Vercel) — antes só era visível em desenvolvimento.
+  console.error(
+    `[error] ${error.name}: ${error.message}${
+      error.digest ? ` (digest: ${error.digest})` : ""
+    }`,
+    error,
+  );
+
   return (
     <div className="flex min-h-[60dvh] flex-col items-center justify-center gap-4 p-6 text-center">
       <div className="flex size-12 items-center justify-center rounded-lg bg-danger-bg text-danger-fg">
