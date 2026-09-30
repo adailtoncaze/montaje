@@ -555,6 +555,32 @@ async function rasterizarSvg(
   }
 }
 
+/**
+ * Título principal do relatório (cabeçalho do PDF).
+ *
+ * Com filtro de tipo ativo usa o rótulo do filtro ("Cronograma de X"). Sem
+ * filtro, deriva dos tipos efetivamente presentes nas atividades do relatório,
+ * para o título nunca apontar para um tipo que não existe nos dados (ex.:
+ * antes o padrão era fixo em "Cronograma de Distribuição de Urnas").
+ */
+export function tituloRelatorio(
+  grupos: GrupoRelatorio[],
+  tipoLabel: string
+): string {
+  if (tipoLabel) return `Cronograma de ${tipoLabel}`;
+  const tipos = new Set<TipoAtividade>();
+  for (const g of grupos) {
+    for (const a of g.atividades) tipos.add(a.tipo);
+  }
+  if (tipos.size === 1) {
+    const label = TIPO_ATIVIDADE_LABEL[[...tipos][0]];
+    if (label) return `Cronograma de ${label}`;
+  }
+  // Vários tipos (ou nenhum): título neutro; o tipo de cada atividade já
+  // aparece na coluna "Tipo de atividade" da tabela do relatório.
+  return "Cronograma de Atividades";
+}
+
 export async function gerarPdfRelatorio(
   grupos: GrupoRelatorio[],
   meta: MetaRelatorio,
@@ -602,12 +628,12 @@ export async function gerarPdfRelatorio(
   ]];
 
   const turno = meta.turno === 2 ? "2º Turno" : "1º Turno";
-  const tituloGlobal = meta.tipoLabel
-    ? `Cronograma de ${meta.tipoLabel}`
-    : "Cronograma de Distribuição de Urnas";
+  // Título do cabeçalho: filtro de tipo ativo ou dinâmico pelos tipos reais.
+  const tituloGlobal = tituloRelatorio(grupos, meta.tipoLabel);
 
-  /** Título de cada bloco: com filtro de tipo ativo usa o do filtro; no
-   * agrupamento por dia deriva do tipo das atividades do bloco (dinâmico). */
+  /** Título de cada bloco: com filtro de tipo ativo usa o do filtro; sem
+   * filtro deriva do tipo das atividades do bloco (agrupamento por dia) e,
+   * quando o bloco é genérico, cai no título global (também dinâmico). */
   const tituloDoGrupo = (g: GrupoRelatorio): string => {
     if (meta.tipoLabel) return tituloGlobal;
     // Só deriva pelo tipo no agrupamento por dia (por equipe mantém o genérico).

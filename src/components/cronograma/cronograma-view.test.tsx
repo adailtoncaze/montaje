@@ -35,7 +35,7 @@ import {
 const EQUIPE_A = makeEquipe({ id: "eq-a", nome: "Equipe Alfa", tipo: "instalacao" });
 const EQUIPE_B = makeEquipe({ id: "eq-b", nome: "Equipe Beta", tipo: "recolhimento_urna" });
 const LOCAL_A = makeLocal({ id: "loc-a", nome: "Escola A", municipio: "João Pessoa" });
-const LOCAL_B = makeLocal({ id: "loc-b", nome: "Escola B", municipio: "Campina Grande" });
+const LOCAL_B = makeLocal({ id: "loc-b", nome: "Escola B", municipio: "Campina Grande", qtd_secoes: 28 });
 
 const EQUIPES: Tables<"equipes">[] = [EQUIPE_A, EQUIPE_B];
 const LOCAIS: Tables<"locais_votacao">[] = [LOCAL_A, LOCAL_B];
@@ -314,6 +314,42 @@ describe("CronogramaView — validação do formulário", () => {
     expect(
       await screen.findByText("violation: data_hora_planejada")
     ).toBeInTheDocument();
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Nº de seções do local no formulário                               */
+/* ------------------------------------------------------------------ */
+
+describe("CronogramaView — seções do local no formulário", () => {
+  it("mostra o nº de seções do local pré-selecionado ao editar", async () => {
+    renderView();
+    await expandirDia();
+    fireEvent.click(screen.getByRole("button", { name: /Editar/ }));
+
+    expect(
+      screen.getByText("10 seções no local selecionado")
+    ).toBeInTheDocument();
+  });
+
+  it("atualiza o nº de seções ao trocar o local", async () => {
+    renderView();
+    await expandirDia();
+    fireEvent.click(screen.getByRole("button", { name: /Editar/ }));
+
+    fireEvent.change(campo("Local de Votação"), { target: { value: "loc-b" } });
+    expect(
+      screen.getByText("28 seções no local selecionado")
+    ).toBeInTheDocument();
+  });
+
+  it("esconde o rótulo quando nenhum local está selecionado", async () => {
+    renderView();
+    await expandirDia();
+    fireEvent.click(screen.getByRole("button", { name: /Editar/ }));
+
+    fireEvent.change(campo("Local de Votação"), { target: { value: "" } });
+    expect(screen.queryByText(/seções no local selecionado/)).toBeNull();
   });
 });
 

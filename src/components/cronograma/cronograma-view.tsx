@@ -139,6 +139,13 @@ export function CronogramaView({
     ...locais.map((l) => ({ value: l.id, label: `${l.nome} — ${l.municipio}` })),
   ];
 
+  // Local escolhido no formulário: exibe o nº de seções como texto de apoio
+  // (ajuda a dimensionar os horários de início e fim da atividade).
+  const localSelecionado = useMemo(
+    () => locais.find((l) => l.id === form.local_id) ?? null,
+    [locais, form.local_id]
+  );
+
   // Rótulo com o tipo cadastrado da equipe (dinâmico — 4 tipos possíveis)
   const equipeOptions: SelectOption[] = [
     { value: "", label: "Selecione a equipe" },
@@ -494,6 +501,13 @@ export function CronogramaView({
             onChange={(e) => setForm({ ...form, local_id: e.target.value })}
             options={localOptions}
             required
+            helperText={
+              localSelecionado
+                ? `${localSelecionado.qtd_secoes} ${
+                    localSelecionado.qtd_secoes === 1 ? "seção" : "seções"
+                  } no local selecionado`
+                : undefined
+            }
           />
           <Select
             label="Equipe"

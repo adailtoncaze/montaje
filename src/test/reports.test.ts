@@ -11,12 +11,14 @@ import {
   nomeArquivoCsv,
   nomeArquivoPdf,
   slugNome,
+  tituloRelatorio,
   type FiltrosRelatorio,
   type GrupoRelatorio,
 } from "@/lib/reports";
 import { parseCSV } from "@/lib/csv";
 import { makeAtividade, makeEquipe, makeLocal } from "@/test/fixtures";
 import type { AtividadeCompleta } from "@/lib/actions/atividades";
+import type { TipoAtividade } from "@/types/database";
 import type { MembroResumido } from "@/lib/actions/equipes";
 
 const MEMBROS: Record<string, MembroResumido[]> = {
@@ -464,6 +466,52 @@ describe("slugNome", () => {
     ["çàé", "cae"],
   ])("%s -> %s", (entrada, esperado) => {
     expect(slugNome(entrada)).toBe(esperado);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Título dinâmico do relatório (cabeçalho do PDF)                    */
+/* ------------------------------------------------------------------ */
+
+describe("tituloRelatorio", () => {
+  const grupoCom = (tipos: TipoAtividade[]): GrupoRelatorio[] => [
+    {
+      id: "g1",
+      titulo: "Equipe: Alfa",
+      atividades: tipos.map((tipo, i) => makeAtividade({ tipo, id: `a${i}` })),
+    },
+  ];
+
+  it("usa o rótulo do filtro quando há filtro de tipo", () => {
+    expect(tituloRelatorio(grupoCom(["verificacao"]), "Montagem de Seção")).toBe(
+      "Cronograma de Montagem de Seção"
+    );
+  });
+
+  it("deriva do tipo único presente quando não há filtro", () => {
+    expect(tituloRelatorio(grupoCom(["verificacao"]), "")).toBe(
+      "Cronograma de Montagem de Seção"
+    );
+  });
+
+  it("deriva do tipo único espalhado em vários grupos", () => {
+    const grupos: GrupoRelatorio[] = [
+      { id: "g1", titulo: "A", atividades: [makeAtividade({ tipo: "verificacao" })] },
+      { id: "g2", titulo: "B", atividades: [makeAtividade({ tipo: "verificacao", id: "a2" })] },
+    ];
+    expect(tituloRelatorio(grupos, "")).toBe("Cronograma de Montagem de Seção");
+  });
+
+  it("usa título neutro quando há vários tipos sem filtro", () => {
+    expect(tituloRelatorio(grupoCom(["instalacao", "recolhimento_urna"]), "")).toBe(
+      "Cronograma de Atividades"
+    );
+  });
+
+  it("usa título neutro quando não há atividades", () => {
+    expect(tituloRelatorio([{ id: "g1", titulo: "A", atividades: [] }], "")).toBe(
+      "Cronograma de Atividades"
+    );
   });
 });
 
